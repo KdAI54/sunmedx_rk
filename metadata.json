@@ -1,0 +1,6 @@
+{
+  "name": "SunMedx",
+  "description": "B2B Biomedical Engineering Enterprise dashboard featuring asset and service hub, spares store, NABH compliance auditor, budget planner, and technician training.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

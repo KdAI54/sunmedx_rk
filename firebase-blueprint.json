@@ -1,0 +1,262 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with operational security role mapping",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "Hospital registered email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Admin", "Technician", "Procurement"],
+          "description": "Operational access control role"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Profile registration timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Profile modification timestamp"
+        },
+        "authProvider": {
+          "type": "string",
+          "enum": ["email", "google"],
+          "description": "Authentication mechanism"
+        }
+      },
+      "required": ["email", "role", "updatedAt"]
+    },
+    "Asset": {
+      "title": "Asset",
+      "description": "Biomedical equipment machine model details",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "department": {
+          "type": "string"
+        },
+        "serialNumber": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Operational", "Under Maintenance", "Calibration Due", "Out of Order"]
+        },
+        "purchaseDate": {
+          "type": "string"
+        },
+        "calibrationDate": {
+          "type": "string"
+        },
+        "contractType": {
+          "type": "string",
+          "enum": ["AMC", "CMC", "None"]
+        },
+        "contractExpiry": {
+          "type": "string"
+        },
+        "maintenanceCost": {
+          "type": "number"
+        },
+        "location": {
+          "type": "string"
+        },
+        "usageHours": {
+          "type": "number",
+          "description": "Accumulated active operate run hours"
+        },
+        "serviceInterval": {
+          "type": "number",
+          "description": "Recommended threshold in hours before maintenance service is required"
+        }
+      },
+      "required": ["id", "name", "model", "manufacturer", "department", "serialNumber", "status"]
+    },
+    "SparePart": {
+      "title": "SparePart",
+      "description": "Biomedical parts product details",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Sensors & Probes", "Batteries", "Filters & Tubings", "Cables", "Imaging Parts"]
+        },
+        "compatibleEquipment": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "stock": {
+          "type": "number"
+        },
+        "image": {
+          "type": "string"
+        },
+        "rating": {
+          "type": "number"
+        }
+      },
+      "required": ["id", "name", "sku", "category", "price", "stock"]
+    },
+    "ServiceTicket": {
+      "title": "ServiceTicket",
+      "description": "Equipment issue reporting tickets",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "assetId": {
+          "type": "string"
+        },
+        "assetName": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["Low", "Medium", "High", "Critical"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Open", "In Progress", "Resolved"]
+        },
+        "loggedBy": {
+          "type": "string"
+        },
+        "loggedAt": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "assetId", "assetName", "issue", "priority", "status", "loggedBy", "loggedAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Validation learning course syllabus",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "instructor": {
+          "type": "string"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["Beginner", "Intermediate", "Advanced"]
+        },
+        "date": {
+          "type": "string"
+        },
+        "modules": {
+          "type": "array"
+        }
+      },
+      "required": ["id", "title", "code", "level"]
+    },
+    "SystemActivityLog": {
+      "title": "SystemActivityLog",
+      "description": "State transition tracing logs",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["asset", "ticket", "procurement"]
+        },
+        "action": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "targetName": {
+          "type": "string"
+        },
+        "userEmail": {
+          "type": "string"
+        },
+        "userRole": {
+          "type": "string",
+          "enum": ["Admin", "Technician", "Procurement"]
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "type", "action", "details", "userEmail", "userRole", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Corporate user accounts with permissions"
+    },
+    "assets/{assetId}": {
+      "schema": "Asset",
+      "description": "All medical and biomedical equipment assets"
+    },
+    "spares/{spareId}": {
+      "schema": "SparePart",
+      "description": "Surgical and engineering spare products catalog"
+    },
+    "tickets/{ticketId}": {
+      "schema": "ServiceTicket",
+      "description": "Open/closed physical service ticket listings"
+    },
+    "courses/{courseId}": {
+      "schema": "Course",
+      "description": "Accredited biomedical training syllabi"
+    },
+    "activity_logs/{logId}": {
+      "schema": "SystemActivityLog",
+      "description": "Immutable operational system activity logging"
+    }
+  }
+}

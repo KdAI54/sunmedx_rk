@@ -1,0 +1,332 @@
+import { Asset, SparePart, Course } from "./types";
+
+export const initialAssets: Asset[] = [
+  {
+    id: "AST-0901",
+    name: "ICU Ventilator",
+    model: "Evita V800",
+    manufacturer: "Dräger",
+    department: "Intensive Care Unit (ICU)",
+    serialNumber: "DR-889201-X",
+    status: "Operational",
+    purchaseDate: "2023-04-12",
+    calibrationDate: "2026-09-15",
+    contractType: "CMC",
+    contractExpiry: "2027-04-12",
+    maintenanceCost: 2400,
+    location: "ICU Bed 12 - Wing B",
+    usageHours: 1250,
+    serviceInterval: 1500
+  },
+  {
+    id: "AST-0902",
+    name: "Automated External Defibrillator (AED)",
+    model: "Lifepak 15",
+    manufacturer: "Physio-Control",
+    department: "Emergency Room (ER)",
+    serialNumber: "AED-441092-B",
+    status: "Calibration Due",
+    purchaseDate: "2022-01-10",
+    calibrationDate: "2026-06-25",
+    contractType: "AMC",
+    contractExpiry: "2027-01-10",
+    maintenanceCost: 850,
+    location: "ER Triage Corridor",
+    usageHours: 850,
+    serviceInterval: 1000
+  },
+  {
+    id: "AST-0903",
+    name: "Multi-Parameter Patient Monitor",
+    model: "IntelliVue MX550",
+    manufacturer: "Philips Healthcare",
+    department: "Cardiology",
+    serialNumber: "PH-992019-M",
+    status: "Operational",
+    purchaseDate: "2024-05-18",
+    calibrationDate: "2026-11-10",
+    contractType: "AMC",
+    contractExpiry: "2028-05-18",
+    maintenanceCost: 1100,
+    location: "Cardiac Care Unit Room 10",
+    usageHours: 350,
+    serviceInterval: 1000
+  },
+  {
+    id: "AST-0904",
+    name: "Mobile Digital C-Arm X-Ray System",
+    model: "OEC Elite II",
+    manufacturer: "GE HealthCare",
+    department: "Operation Theatre (OT)",
+    serialNumber: "GE-CA-55102-S",
+    status: "Under Maintenance",
+    purchaseDate: "2021-08-22",
+    calibrationDate: "2026-08-10",
+    contractType: "CMC",
+    contractExpiry: "2026-08-22",
+    maintenanceCost: 5200,
+    location: "OT-3 Cardiac Suite",
+    usageHours: 1650,
+    serviceInterval: 2000
+  },
+  {
+    id: "AST-0905",
+    name: "Infusion Pump",
+    model: "Alaris GP Volumetric",
+    manufacturer: "BD",
+    department: "Pediatrics",
+    serialNumber: "BD-INF-33011-P",
+    status: "Operational",
+    purchaseDate: "2025-02-14",
+    calibrationDate: "2026-08-14",
+    contractType: "None",
+    contractExpiry: "",
+    maintenanceCost: 350,
+    location: "Pediatric Station Drawer 3",
+    usageHours: 85,
+    serviceInterval: 100
+  },
+  {
+    id: "AST-0906",
+    name: "Electrosurgical Generator",
+    model: "ForceTriad",
+    manufacturer: "Covidien Medtronic",
+    department: "Surgery",
+    serialNumber: "ME-FT-99102-K",
+    status: "Operational",
+    purchaseDate: "2023-11-30",
+    calibrationDate: "2026-11-30",
+    contractType: "CMC",
+    contractExpiry: "2028-11-30",
+    maintenanceCost: 1800,
+    location: "OT-1 General Surgery",
+    usageHours: 450,
+    serviceInterval: 1200
+  },
+  {
+    id: "AST-0907",
+    name: "High-End Diagnostic Ultrasound",
+    model: "EPIQ Elite",
+    manufacturer: "Philips Healthcare",
+    department: "Radiology",
+    serialNumber: "PH-US-44291-U",
+    status: "Operational",
+    purchaseDate: "2022-09-05",
+    calibrationDate: "2026-10-05",
+    contractType: "AMC",
+    contractExpiry: "2026-09-05",
+    maintenanceCost: 3100,
+    location: "Radiology Room 3",
+    usageHours: 1800,
+    serviceInterval: 2000
+  },
+  {
+    id: "AST-0908",
+    name: "Neonatal Incubator",
+    model: "Isolette 8000",
+    manufacturer: "Dräger",
+    department: "Neonatal ICU (NICU)",
+    serialNumber: "DR-IN-449195-H",
+    status: "Out of Order",
+    purchaseDate: "2020-03-15",
+    calibrationDate: "2026-03-15",
+    contractType: "CMC",
+    contractExpiry: "2025-03-15",
+    maintenanceCost: 2900,
+    location: "NICU Bay A - Unit 4",
+    usageHours: 1100,
+    serviceInterval: 1000
+  },
+  {
+    id: "AST-0909",
+    name: "Anesthesia Workstation",
+    model: "Aisys CS2",
+    manufacturer: "GE HealthCare",
+    department: "Anesthesiology",
+    serialNumber: "GE-AN-883906-Y",
+    status: "Operational",
+    purchaseDate: "2024-02-10",
+    calibrationDate: "2027-02-10",
+    contractType: "AMC",
+    contractExpiry: "2027-02-10",
+    maintenanceCost: 4200,
+    location: "OT-2 Neurovascular Suite",
+    usageHours: 200,
+    serviceInterval: 1500
+  },
+  {
+    id: "AST-0910",
+    name: "Steam Sterilizer Autoclave",
+    model: "MST-V 600",
+    manufacturer: "Belimed",
+    department: "Central Sterile Services Dept (CSSD)",
+    serialNumber: "BL-ST-223101-W",
+    status: "Operational",
+    purchaseDate: "2020-06-18",
+    calibrationDate: "2026-06-18",
+    contractType: "CMC",
+    contractExpiry: "2030-06-18",
+    maintenanceCost: 1500,
+    location: "CSSD Wash Area 1",
+    usageHours: 600,
+    serviceInterval: 1500
+  }
+];
+
+export const initialSpares: SparePart[] = [
+  {
+    id: "SPR-101",
+    name: "Adult reusable SpO2 Sensor Probe",
+    sku: "PH-SPO2-AD",
+    category: "Sensors & Probes",
+    compatibleEquipment: "Philips IntelliVue Patient Monitors",
+    price: 185.00,
+    stock: 24,
+    image: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=300&q=80",
+    rating: 4.8
+  },
+  {
+    id: "SPR-102",
+    name: "Lithium-Ion Backup Battery Pack",
+    sku: "LP15-BAT-LI",
+    category: "Batteries",
+    compatibleEquipment: "Physio-Control Lifepak 15 AED",
+    price: 320.00,
+    stock: 12,
+    image: "https://images.unsplash.com/photo-1590156546746-cf10ea97e0b8?auto=format&fit=crop&w=300&q=80",
+    rating: 4.6
+  },
+  {
+    id: "SPR-103",
+    name: "HEPA Bacteria Filter (Pack of 50)",
+    sku: "DR-HEPA-ICU",
+    category: "Filters & Tubings",
+    compatibleEquipment: "Dräger Evita ICU Ventilators",
+    price: 95.00,
+    stock: 45,
+    image: "https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=300&q=80",
+    rating: 4.9
+  },
+  {
+    id: "SPR-104",
+    name: "Electrocardiogram (ECG) 5-Lead Trunk Cable",
+    sku: "GE-ECG-5L-TR",
+    category: "Cables",
+    compatibleEquipment: "GE Patient Monitor Systems",
+    price: 145.00,
+    stock: 18,
+    image: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=300&q=80",
+    rating: 4.5
+  },
+  {
+    id: "SPR-105",
+    name: "NIBP Reusable Blood Pressure Cuff - Adult",
+    sku: "PH-NIBP-AD-CU",
+    category: "Sensors & Probes",
+    compatibleEquipment: "All standard Patient Monitors",
+    price: 65.00,
+    stock: 35,
+    image: "https://images.unsplash.com/photo-1516549655169-df83a0774514?auto=format&fit=crop&w=300&q=80",
+    rating: 4.7
+  },
+  {
+    id: "SPR-106",
+    name: "Reusable Oxygen Sensor Fuel Cell",
+    sku: "DR-O2-SENS",
+    category: "Sensors & Probes",
+    compatibleEquipment: "Dräger Anesthesia & Ventilation",
+    price: 210.00,
+    stock: 15,
+    image: "https://images.unsplash.com/photo-1530026405186-ed1ea0ac7a63?auto=format&fit=crop&w=300&q=80",
+    rating: 4.4
+  },
+  {
+    id: "SPR-107",
+    name: "X-Ray High Voltage Cable Assembly",
+    sku: "GE-XRAY-HV-CB",
+    category: "Imaging Parts",
+    compatibleEquipment: "GE Mobile X-Ray & C-Arm Units",
+    price: 1250.00,
+    stock: 3,
+    image: "https://images.unsplash.com/photo-1579684389782-64d84b5e901a?auto=format&fit=crop&w=300&q=80",
+    rating: 5.0
+  },
+  {
+    id: "SPR-108",
+    name: "Autoclave Silicone Chamber Door Gasket",
+    sku: "BL-MSTV-GSK",
+    category: "Filters & Tubings",
+    compatibleEquipment: "Belimed MST-V Sterilizers",
+    price: 115.00,
+    stock: 10,
+    image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=300&q=80",
+    rating: 4.3
+  }
+];
+
+export const initialCourses: Course[] = [
+  {
+    id: "CRS-201",
+    title: "Advanced Ventilator Calibration & Pneumatics",
+    code: "BME-VENT-ADV",
+    description: "Deep dive into pneumatic blocks, solenoid valves, pressure transducers, standard calibration loops, and troubleshooting error codes for modern ICU ventilators (Dräger and Hamilton).",
+    duration: "3 Weeks (18 Hours)",
+    instructor: "Engr. Jean-Louis Vance, Dräger Lead Trainer",
+    level: "Advanced",
+    date: "July 08 - July 29, 2026",
+    modules: [
+      "ICU Pneumatics and Gas Flow Mechanics",
+      "Sensor Calibration and Diagnostic Modes",
+      "Error Code Matrix and Solenoid Calibration",
+      "Preventative Maintenance Checklist Execution"
+    ]
+  },
+  {
+    id: "CRS-202",
+    title: "NABH Compliance & Regulatory Safety Guidelines",
+    code: "BME-COMP-NABH",
+    description: "Navigate National Accreditation Board for Hospitals (NABH) Chapter 5 guidelines (FMS), electrical safety testing standards (IEC 60601-1), asset logging requirements, and risk categorization.",
+    duration: "1 Week (6 Hours)",
+    instructor: "Dr. Aradhana Sen, Quality & Compliance Consultant",
+    level: "Beginner",
+    date: "Aug 12 - Aug 19, 2026",
+    modules: [
+      "NABH Chapter 5 & Facility Management Safety (FMS)",
+      "Electrical Leakage Testing under IEC 60601-1",
+      "Asset Register Audits and Breakdown Management Logs",
+      "Drafting Standard Operating Procedures (SOP)"
+    ]
+  },
+  {
+    id: "CRS-203",
+    title: "Defibrillator Preventative Maintenance & Energy Validation",
+    code: "BME-DEFIB-PM",
+    description: "Hands-on certification for validating shock discharge energy, pacing thresholds, ECG simulation benchmarks, and backup battery load profiles on emergency response defibrillators.",
+    duration: "2 Weeks (12 Hours)",
+    instructor: "Engr. Richard Patel, Senior Biophystech Advisor",
+    level: "Intermediate",
+    date: "Sept 05 - Sept 19, 2026",
+    modules: [
+      "Defibrillator Waveforms (Biphasic vs Monophasic)",
+      "Energy Output Verification and Tester Load Integration",
+      "Transcutaneous Pacing and ECG Input Diagnostics",
+      "Sealed Lead Acid & Li-ion Battery Lifecycle Assessment"
+    ]
+  },
+  {
+    id: "CRS-204",
+    title: "Medical Ultrasound Transducer Maintenance & Repair",
+    code: "BME-US-SONO",
+    description: "Master ultrasound probe maintenance, visual acoustic field tests, array element mapping, high-density connection repairs, and electrical safety measurements for diagnostic transducers.",
+    duration: "4 Weeks (24 Hours)",
+    instructor: "Prof. Clara Wu, Acoustic Diagnostics Lead",
+    level: "Advanced",
+    date: "Oct 10 - Nov 07, 2026",
+    modules: [
+      "Piezoelectric Element Crystals and Acoustic Arrays",
+      "Acoustic Lens Delamination and Structural Remodeling",
+      "Electrical Safety and Strain Relief Cable Soldering",
+      "Phased Array Diagnostic and Phantom Calibration"
+    ]
+  }
+];

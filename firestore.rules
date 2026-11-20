@@ -1,0 +1,143 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && hasUserDoc() && getUserData().role == 'Admin';
+    }
+
+    function isTechnician() {
+      return isSignedIn() && hasUserDoc() && getUserData().role == 'Technician';
+    }
+
+    function isProcurement() {
+      return isSignedIn() && hasUserDoc() && getUserData().role == 'Procurement';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Users collection rules
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId 
+                    && incoming().role in ['Admin', 'Technician', 'Procurement']
+                    && incoming().email is string && incoming().email.size() <= 120;
+      allow update: if isSignedIn() && request.auth.uid == userId 
+                    && incoming().role == existing().role
+                    && incoming().email is string && incoming().email.size() <= 120;
+      allow delete: if false;
+    }
+
+    // Validation schemas
+    function isValidAsset(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.model is string && data.model.size() <= 200
+        && data.manufacturer is string && data.manufacturer.size() <= 120
+        && data.department is string && data.department.size() <= 120
+        && data.serialNumber is string && data.serialNumber.size() <= 120
+        && data.status in ["Operational", "Under Maintenance", "Calibration Due", "Out of Order"];
+    }
+
+    // 2. Assets collection rules
+    match /assets/{assetId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isAdmin() || isTechnician()) && isValidAsset(incoming());
+      allow update: if isSignedIn() && (isAdmin() || isTechnician()) && isValidAsset(incoming());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    function isValidSpare(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.sku is string && data.sku.size() <= 120
+        && data.category in ["Sensors & Probes", "Batteries", "Filters & Tubings", "Cables", "Imaging Parts"]
+        && data.price is number && data.price >= 0
+        && data.stock is int && data.stock >= 0;
+    }
+
+    // 3. Spares (catalog & parts) collection rules
+    match /spares/{spareId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isAdmin() && isValidSpare(incoming());
+      allow update: if isSignedIn() && (
+        ((isAdmin() || isProcurement()) && isValidSpare(incoming())) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['stock']) && incoming().stock is int && incoming().stock >= 0)
+      );
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    function isValidTicket(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.assetId is string && data.assetId.size() <= 128
+        && data.assetName is string && data.assetName.size() <= 200
+        && data.issue is string && data.issue.size() <= 1000
+        && data.priority in ["Low", "Medium", "High", "Critical"]
+        && data.status in ["Open", "In Progress", "Resolved"];
+    }
+
+    // 4. Tickets collection rules
+    match /tickets/{ticketId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isAdmin() || isTechnician()) && isValidTicket(incoming());
+      allow update: if isSignedIn() && (isAdmin() || isTechnician()) && isValidTicket(incoming());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    function isValidCourse(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 250
+        && data.code is string && data.code.size() <= 120
+        && data.level in ["Beginner", "Intermediate", "Advanced"];
+    }
+
+    // 5. Training Courses collection rules
+    match /courses/{courseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isAdmin() && isValidCourse(incoming());
+      allow update: if isSignedIn() && (isAdmin() || isTechnician()) && isValidCourse(incoming());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    function isValidLog(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.type in ["asset", "ticket", "procurement"]
+        && data.action is string && data.action.size() <= 250
+        && data.details is string && data.details.size() <= 2000
+        && data.userEmail is string && data.userEmail.size() <= 200
+        && data.userRole in ["Admin", "Technician", "Procurement"];
+    }
+
+    // 6. Immutable System Activity Logs collection rules
+    match /activity_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidLog(incoming());
+      allow update, delete: if false; // Write-once audit trails
+    }
+
+  }
+}
