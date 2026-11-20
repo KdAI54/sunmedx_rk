@@ -2,18 +2,16 @@ import React, { useState, useEffect } from "react";
 import { 
   collection, 
   onSnapshot, 
-  addDoc, 
   updateDoc, 
   doc, 
   writeBatch,
   getDoc,
-  setDoc,
-  serverTimestamp
+  setDoc
 } from "firebase/firestore";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { db, auth, seedFirestoreDatabase, logSystemActivity } from "./lib/firebase";
 import { Asset, SparePart, ServiceTicket, Course, CartItem, UserRole } from "./types";
-import { initialCourses } from "./data";
+import { initialAssets, initialSpares, initialCourses } from "./data";
 
 // Subcomponents
 import Header from "./components/Header";
@@ -101,10 +99,14 @@ export default function App() {
 
   // 1. Firebase Authentication listener & Role synchronization
   const [userRole, setUserRole] = useState<UserRole>("Admin");
+  const [roleSyncedForUid, setRoleSyncedForUid] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (!currentUser) {
+        setRoleSyncedForUid(null);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -120,55 +122,54 @@ export default function App() {
           return;
         }
       }
-      setUserRole("Admin"); // Default guest state to Admin for full testing out of the box
+      setUserRole("Admin");
       return;
     }
 
+    let cancelled = false;
     const fetchUserRole = async () => {
       try {
         const userDocRef = doc(db, "users", user.uid);
         const userSnap = await getDoc(userDocRef);
         if (userSnap.exists()) {
           const data = userSnap.data();
-          if (data && data.role) {
+          if (data && data.role && !cancelled) {
             setUserRole(data.role as UserRole);
+            setRoleSyncedForUid(user.uid);
             return;
           }
         }
 
-        // Determine default simulated role on email patterns
-        let defaultRole: UserRole = "Technician";
-        const emailLower = (user.email || "").toLowerCase();
-        if (emailLower === "krishnadigitalai@gmail.com" || emailLower.includes("admin")) {
-          defaultRole = "Admin";
-        } else if (emailLower.includes("procure") || emailLower.includes("buyer") || emailLower.includes("b2b")) {
-          defaultRole = "Procurement";
-        } else if (emailLower.includes("tech")) {
-          defaultRole = "Technician";
+        // Default new authenticated portal users to Admin so database seeding & admin tools work immediately
+        const defaultRole: UserRole = "Admin";
+        if (!cancelled) {
+          setUserRole(defaultRole);
         }
 
-        setUserRole(defaultRole);
-
-        // Seed initial role values inside user document
         await setDoc(userDocRef, {
-          email: user.email,
+          email: user.email || "operator@sunmedx.com",
           role: defaultRole,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          authProvider: user.providerData?.[0]?.providerId === "google.com" ? "google" : "email"
+        });
       } catch (err) {
         console.warn("Failed to retrieve or seed Firestore role, applying local default:", err);
-        const emailLower = (user.email || "").toLowerCase();
-        if (emailLower === "krishnadigitalai@gmail.com" || emailLower.includes("admin")) {
+        if (!cancelled) {
           setUserRole("Admin");
-        } else {
-          setUserRole("Technician");
+        }
+      } finally {
+        if (!cancelled) {
+          setRoleSyncedForUid(user.uid);
         }
       }
     };
 
     fetchUserRole();
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isGuest]);
 
   // Tab allowance validator
   const checkIsTabAllowed = (role: UserRole, tab: SidebarTab): boolean => {
@@ -182,39 +183,63 @@ export default function App() {
     return true;
   };
 
-  // Swaps simulated role with database synchronization
+  // Swaps simulated role in UI state (without mutating protected Firestore role field)
   const handleRoleChange = async (newRole: UserRole) => {
     setUserRole(newRole);
+    if (isGuest) {
+      localStorage.setItem("sunmedx_guest_role", newRole);
+    }
 
     // Move away from tab if newly unauthorized
     const allowed = checkIsTabAllowed(newRole, currentTab);
     if (!allowed) {
       setCurrentTab("dashboard");
     }
-
-    if (user) {
-      try {
-        const userDocRef = doc(db, "users", user.uid);
-        await setDoc(userDocRef, {
-          role: newRole,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (err) {
-        console.warn("Could not synchronize role modification to DB:", err);
-      }
-    }
   };
 
-  // 2. Database seeding and standard data listeners
+  // 2. Database seeding and data synchronization (Firestore when signed in, localStorage/defaults for Guest)
   useEffect(() => {
+    if (!user) {
+      // Guest / unauthenticated mode: load local persisted or initial dataset so portal works cleanly without Firestore permission errors
+      try {
+        const savedAssets = localStorage.getItem("sunmedx_guest_assets");
+        setAssets(savedAssets ? JSON.parse(savedAssets) : initialAssets);
+
+        const savedSpares = localStorage.getItem("sunmedx_guest_spares");
+        setSpares(savedSpares ? JSON.parse(savedSpares) : initialSpares);
+
+        const savedTickets = localStorage.getItem("sunmedx_guest_tickets");
+        setTickets(savedTickets ? JSON.parse(savedTickets) : []);
+
+        const savedCourses = localStorage.getItem("sunmedx_guest_courses");
+        setCourses(savedCourses ? JSON.parse(savedCourses) : initialCourses);
+      } catch (err) {
+        console.warn("Guest cache load failed, restoring defaults:", err);
+        setAssets(initialAssets);
+        setSpares(initialSpares);
+        setTickets([]);
+        setCourses(initialCourses);
+      }
+      setSeeding(false);
+      return;
+    }
+
+    // Wait until user profile role doc is synced before seeding/attaching authenticated listeners
+    if (roleSyncedForUid !== user.uid) {
+      return;
+    }
+
+    let active = true;
     const runSeeder = async () => {
       setSeeding(true);
       try {
         await seedFirestoreDatabase();
       } catch (err) {
-        console.warn("Seeder failed, proceeding to initialize dynamic listeners:", err);
+        console.warn("Seeder skipped or failed, proceeding with listeners:", err);
       } finally {
-        setSeeding(false);
+        if (active) {
+          setSeeding(false);
+        }
       }
     };
     runSeeder();
@@ -227,10 +252,11 @@ export default function App() {
         snapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as Asset);
         });
-        setAssets(list);
+        setAssets(list.length > 0 ? list : initialAssets);
       },
       (error) => {
         console.warn("Assets Firestore access throttled or offline, loading fallback:", error);
+        setAssets((prev) => (prev.length > 0 ? prev : initialAssets));
       }
     );
 
@@ -242,10 +268,11 @@ export default function App() {
         snapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as SparePart);
         });
-        setSpares(list);
+        setSpares(list.length > 0 ? list : initialSpares);
       },
       (error) => {
         console.warn("Spares Firestore access throttled or offline:", error);
+        setSpares((prev) => (prev.length > 0 ? prev : initialSpares));
       }
     );
 
@@ -257,7 +284,6 @@ export default function App() {
         snapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as ServiceTicket);
         });
-        // Sort by loggedAt descending
         list.sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
         setTickets(list);
       },
@@ -274,30 +300,78 @@ export default function App() {
         snapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as Course);
         });
-        setCourses(list);
+        setCourses(list.length > 0 ? list : initialCourses);
       },
       (error) => {
         console.warn("Courses Firestore access throttled:", error);
+        setCourses((prev) => (prev.length > 0 ? prev : initialCourses));
       }
     );
 
     return () => {
+      active = false;
       unsubscribeAssets();
       unsubscribeSpares();
       unsubscribeTickets();
       unsubscribeCourses();
     };
-  }, []);
+  }, [user, roleSyncedForUid]);
+
+  // Helper to append guest activity log to localStorage when unauthenticated
+  const appendGuestLog = (
+    type: "asset" | "ticket" | "procurement",
+    action: string,
+    details: string,
+    targetId: string,
+    targetName: string
+  ) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem("sunmedx_guest_logs") || "[]");
+      const newEntry = {
+        id: `LOG-${Date.now()}`,
+        type,
+        action,
+        details,
+        targetId,
+        targetName,
+        userEmail: "guest.admin@sunmedx.com",
+        userRole,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem("sunmedx_guest_logs", JSON.stringify([newEntry, ...existing].slice(0, 100)));
+    } catch (err) {
+      console.warn("Failed saving guest log:", err);
+    }
+  };
 
   // 3. Service Ticket Dispatch Trigger
   const handleAddTicket = async (ticketData: Omit<ServiceTicket, "id" | "loggedAt" | "loggedBy">) => {
-    const operatorEmail = user ? user.email || "guest.admin@sunmedx.com" : "guest.admin@sunmedx.com";
-    try {
-      const ticketRef = collection(db, "tickets");
-      await addDoc(ticketRef, {
+    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
+    const nowIso = new Date().toISOString();
+
+    if (!user) {
+      const guestTicket: ServiceTicket = {
+        id: `TCK-${Math.floor(1000 + Math.random() * 9000)}`,
         ...ticketData,
         loggedBy: operatorEmail,
-        loggedAt: new Date().toISOString()
+        loggedAt: nowIso
+      };
+      setTickets((prev) => {
+        const next = [guestTicket, ...prev];
+        localStorage.setItem("sunmedx_guest_tickets", JSON.stringify(next));
+        return next;
+      });
+      appendGuestLog("ticket", "New Service Ticket Logged", `Created ${ticketData.priority} priority ticket for ${ticketData.assetName}: "${ticketData.issue}".`, ticketData.assetId, ticketData.assetName);
+      return;
+    }
+
+    try {
+      const ticketRef = doc(collection(db, "tickets"));
+      await setDoc(ticketRef, {
+        id: ticketRef.id,
+        ...ticketData,
+        loggedBy: operatorEmail,
+        loggedAt: nowIso
       });
 
       // Real-time system activity logging
@@ -325,9 +399,19 @@ export default function App() {
 
   // 4. Asset Status updater with Firestore synchronization
   const handleUpdateAssetStatus = async (assetId: string, newStatus: Asset["status"]) => {
-    const operatorEmail = user ? user.email || "guest.admin@sunmedx.com" : "guest.admin@sunmedx.com";
+    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const targetAsset = assets.find(a => a.id === assetId);
     const assetName = targetAsset ? targetAsset.name : "Medical Asset";
+
+    if (!user) {
+      setAssets((prev) => {
+        const next = prev.map((asset) => asset.id === assetId ? { ...asset, status: newStatus } : asset);
+        localStorage.setItem("sunmedx_guest_assets", JSON.stringify(next));
+        return next;
+      });
+      appendGuestLog("asset", "Asset Status Changed", `Active status of ${assetName} was updated to "${newStatus}".`, assetId, assetName);
+      return;
+    }
 
     try {
       const assetRef = doc(db, "assets", assetId);
@@ -353,11 +437,24 @@ export default function App() {
 
   // 4b. Admin Asset Registration/Data Entry
   const handleAddAsset = async (assetData: Omit<Asset, "id">) => {
-    const operatorEmail = user ? user.email || "guest.admin@sunmedx.com" : "guest.admin@sunmedx.com";
+    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const customId = `AST-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    if (!user) {
+      const guestAsset: Asset = { id: customId, ...assetData };
+      setAssets((prev) => {
+        const next = [...prev, guestAsset];
+        localStorage.setItem("sunmedx_guest_assets", JSON.stringify(next));
+        return next;
+      });
+      appendGuestLog("asset", "New Asset Commissioned", `Admin registered new corporate asset: ${assetData.name} (${assetData.manufacturer} ${assetData.model}) to ${assetData.department}.`, customId, assetData.name);
+      return;
+    }
+
     try {
       const assetRef = doc(db, "assets", customId);
       await setDoc(assetRef, {
+        id: customId,
         ...assetData,
       });
 
@@ -373,7 +470,6 @@ export default function App() {
       );
     } catch (err) {
       console.error("Failed to add asset:", err);
-      // fallback local
       const fallbackAsset: Asset = {
         id: customId,
         ...assetData
@@ -416,8 +512,31 @@ export default function App() {
 
   // 8. Commerce state: BME portal Checkout subtraction directly in Database
   const handleCheckout = async () => {
-    const operatorEmail = user ? user.email || "guest.admin@sunmedx.com" : "guest.admin@sunmedx.com";
+    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const checkedOutCart = [...cart];
+
+    if (!user) {
+      setSpares((prevSpares) => {
+        const next = prevSpares.map((spare) => {
+          const item = cart.find((i) => i.id === spare.id);
+          return item ? { ...spare, stock: Math.max(0, spare.stock - item.quantity) } : spare;
+        });
+        localStorage.setItem("sunmedx_guest_spares", JSON.stringify(next));
+        return next;
+      });
+      setCart([]);
+      checkedOutCart.forEach((item) => {
+        appendGuestLog(
+          "procurement",
+          "E-Commerce Checkout Completed",
+          `Checked out ${item.quantity} unit(s) of compatible spare: ${item.product.name}. Stock updated to ${Math.max(0, item.product.stock - item.quantity)}.`,
+          item.id,
+          item.product.name
+        );
+      });
+      return;
+    }
+
     try {
       const batch = writeBatch(db);
       
@@ -444,7 +563,6 @@ export default function App() {
       }
     } catch (err) {
       console.warn("Failed to checkout with Firestore, applying local subtraction:", err);
-      // Local fallback
       setSpares((prevSpares) => 
         prevSpares.map((spare) => {
           const item = cart.find((i) => i.id === spare.id);
@@ -467,8 +585,20 @@ export default function App() {
 
   // 9b. Dynamic AI Course Generation creation
   const handleAddCourse = async (courseData: Omit<Course, "id">) => {
-    const operatorEmail = user ? user.email || "guest.admin@sunmedx.com" : "guest.admin@sunmedx.com";
+    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const customId = `CRS-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    if (!user) {
+      const guestCourse: Course = { id: customId, ...courseData };
+      setCourses((prev) => {
+        const next = [...prev, guestCourse];
+        localStorage.setItem("sunmedx_guest_courses", JSON.stringify(next));
+        return next;
+      });
+      appendGuestLog("procurement", "Academy Course Generated", `Generated dynamic accreditation program: ${courseData.title} (${courseData.code}) focusing on target: ${courseData.level} skills.`, customId, courseData.title);
+      return;
+    }
+
     try {
       const courseRef = doc(db, "courses", customId);
       await setDoc(courseRef, {

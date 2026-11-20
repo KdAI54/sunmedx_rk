@@ -5,13 +5,12 @@ import {
   query, 
   orderBy, 
   limit, 
-  addDoc, 
-  deleteDoc, 
   getDocs,
   doc,
+  setDoc,
   writeBatch
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
 import { SystemActivityLog, UserRole } from "../types";
 import { 
   History, 
@@ -99,9 +98,34 @@ export default function SystemActivityLogComp({
     setTempSettings({ ...settings });
   }, [settings]);
 
-  // Read real-time activity logs from Firestore (limit to 100 entries)
+  // Helper to append a log locally in Guest Mode
+  const writeGuestLogEntry = (entry: Omit<SystemActivityLog, "id">) => {
+    const newLog: SystemActivityLog = { id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`, ...entry };
+    setLogs((prev) => {
+      const next = [newLog, ...prev].slice(0, 100);
+      try {
+        localStorage.setItem("sunmedx_guest_logs", JSON.stringify(next));
+      } catch (e) {
+        console.warn("Could not save guest log:", e);
+      }
+      return next;
+    });
+  };
+
+  // Read real-time activity logs from Firestore when signed in, or localStorage in Guest Mode
   useEffect(() => {
     setLoading(true);
+    if (!auth.currentUser) {
+      try {
+        const saved = localStorage.getItem("sunmedx_guest_logs");
+        setLogs(saved ? JSON.parse(saved) : []);
+      } catch (e) {
+        setLogs([]);
+      }
+      setLoading(false);
+      return;
+    }
+
     const logsCol = collection(db, "activity_logs");
     const q = query(logsCol, orderBy("timestamp", "desc"), limit(100));
 
@@ -224,9 +248,14 @@ export default function SystemActivityLogComp({
     }
 
     try {
-      await addDoc(collection(db, "activity_logs"), logPayload);
+      if (!auth.currentUser) {
+        writeGuestLogEntry(logPayload);
+      } else {
+        const logRef = doc(collection(db, "activity_logs"));
+        await setDoc(logRef, { id: logRef.id, ...logPayload });
+      }
     } catch (err) {
-      console.error("Simulation error logging to Firestore:", err);
+      console.error("Simulation error logging:", err);
     } finally {
       setIsSimulating(null);
     }
@@ -248,7 +277,12 @@ export default function SystemActivityLogComp({
     };
 
     try {
-      await addDoc(collection(db, "activity_logs"), logPayload);
+      if (!auth.currentUser) {
+        writeGuestLogEntry(logPayload);
+      } else {
+        const logRef = doc(collection(db, "activity_logs"));
+        await setDoc(logRef, { id: logRef.id, ...logPayload });
+      }
       setSandboxSuccessMessage("Catastrophic ventilator telemetry alert injected successfully!");
       setTimeout(() => setSandboxSuccessMessage(""), 5000);
     } catch (err) {
@@ -261,6 +295,23 @@ export default function SystemActivityLogComp({
   // Safe Wipe of Logs
   const clearLogs = async () => {
     if (!window.confirm("Are you sure you want to permanently clear the audit logs? This action is irreversible.")) return;
+    if (!auth.currentUser) {
+      const initLog: SystemActivityLog = {
+        id: `LOG-${Date.now()}`,
+        type: "asset",
+        action: "Audit Trail Initialized",
+        details: "Administrative policy initialized. All historic clinical ledger entries flushed safely by chief administrator.",
+        targetId: "SYS-INIT",
+        targetName: "Governance Ledger",
+        userEmail: userEmail || "guest.admin@sunmedx.com",
+        userRole: "Admin",
+        timestamp: new Date().toISOString()
+      };
+      setLogs([initLog]);
+      localStorage.setItem("sunmedx_guest_logs", JSON.stringify([initLog]));
+      return;
+    }
+
     try {
       const querySnapshot = await getDocs(collection(db, "activity_logs"));
       const batch = writeBatch(db);
@@ -270,7 +321,9 @@ export default function SystemActivityLogComp({
       await batch.commit();
       
       // Seed initial dummy action entry so ledger is not completely empty
-      await addDoc(collection(db, "activity_logs"), {
+      const initRef = doc(collection(db, "activity_logs"));
+      await setDoc(initRef, {
+        id: initRef.id,
         type: "asset",
         action: "Audit Trail Initialized",
         details: "Administrative policy initialized. All historic clinical ledger entries flushed safely by chief administrator.",
@@ -288,44 +341,52 @@ export default function SystemActivityLogComp({
   // Seed default clinical registries to logs
   const handleBulkRestoreDemoLogs = async () => {
     setLoading(true);
+    const testLogs: Omit<SystemActivityLog, "id">[] = [
+      {
+        type: "asset",
+        action: "Asset Registered",
+        details: "Biomedical engineering added new ICU Ventilator (Model: V-800, Brand: Siemens) with recommended service interval of 1200 hours.",
+        targetId: "AST-9210",
+        targetName: "Siemens V-800 Ventilator",
+        userEmail: "admin@sunmedx.com",
+        userRole: "Admin",
+        timestamp: new Date(Date.now() - 3600000 * 24 * 3).toISOString()
+      },
+      {
+        type: "ticket",
+        action: "Calibration Logged",
+        details: "Defibrillator energy discharge validation completed. Calibrated successfully up to 360 Joules. Divergence drift within 1.2%.",
+        targetId: "AST-8820",
+        targetName: "Philips AED Defibrillator",
+        userEmail: "engineer.jones@sunmedx.com",
+        userRole: "Technician",
+        timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString()
+      },
+      {
+        type: "procurement",
+        action: "Inventory Restocked",
+        details: "Hospital procurement ordered 25x pediatric SpO2 clip probes. Sourced directly via BME portal approved vendor channel.",
+        targetId: "SPR-5501",
+        targetName: "Pediatric SpO2 Clip Probes",
+        userEmail: "procurement@sunmedx.com",
+        userRole: "Procurement",
+        timestamp: new Date(Date.now() - 3600000 * 24 * 1).toISOString()
+      }
+    ];
+
+    if (!auth.currentUser) {
+      testLogs.forEach(writeGuestLogEntry);
+      setSandboxSuccessMessage("Demo clinical trails loaded into local Guest sandbox!");
+      setTimeout(() => setSandboxSuccessMessage(""), 5000);
+      setLoading(false);
+      return;
+    }
+
     try {
       const batch = writeBatch(db);
-      const testLogs: Omit<SystemActivityLog, "id">[] = [
-        {
-          type: "asset",
-          action: "Asset Registered",
-          details: "Biomedical engineering added new ICU Ventilator (Model: V-800, Brand: Siemens) with recommended service interval of 1200 hours.",
-          targetId: "AST-9210",
-          targetName: "Siemens V-800 Ventilator",
-          userEmail: "admin@sunmedx.com",
-          userRole: "Admin",
-          timestamp: new Date(Date.now() - 3600000 * 24 * 3).toISOString()
-        },
-        {
-          type: "ticket",
-          action: "Calibration Logged",
-          details: "Defibrillator energy discharge validation completed. Calibrated successfully up to 360 Joules. Divergence drift within 1.2%.",
-          targetId: "AST-8820",
-          targetName: "Philips AED Defibrillator",
-          userEmail: "engineer.jones@sunmedx.com",
-          userRole: "Technician",
-          timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString()
-        },
-        {
-          type: "procurement",
-          action: "Inventory Restocked",
-          details: "Hospital procurement ordered 25x pediatric SpO2 clip probes. Sourced directly via BME portal approved vendor channel.",
-          targetId: "SPR-5501",
-          targetName: "Pediatric SpO2 Clip Probes",
-          userEmail: "procurement@sunmedx.com",
-          userRole: "Procurement",
-          timestamp: new Date(Date.now() - 3600000 * 24 * 1).toISOString()
-        }
-      ];
-
       for (const t of testLogs) {
         const docRef = doc(collection(db, "activity_logs"));
-        batch.set(docRef, t);
+        batch.set(docRef, { id: docRef.id, ...t });
       }
       await batch.commit();
       setSandboxSuccessMessage("Demo clinical trails synced successfully to Firestore!");
@@ -341,9 +402,8 @@ export default function SystemActivityLogComp({
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateSettings(tempSettings);
-    
-    // Log the configuration adjustment action
-    addDoc(collection(db, "activity_logs"), {
+
+    const logEntry: Omit<SystemActivityLog, "id"> = {
       type: "asset",
       action: "Policy Parameter Tweak",
       details: `Chief Administrator adjusted hospital system rules: Lifespan=${tempSettings.defaultUsefulLife}yr, Store Markup=${tempSettings.storeMarkupPercent}%, Calib=${tempSettings.calibrationIntervalMonths}mo, Standard=${tempSettings.qualityAuditStandard}.`,
@@ -352,7 +412,14 @@ export default function SystemActivityLogComp({
       userEmail: userEmail || "admin@sunmedx.com",
       userRole: "Admin",
       timestamp: new Date().toISOString()
-    }).catch(err => console.error(err));
+    };
+
+    if (!auth.currentUser) {
+      writeGuestLogEntry(logEntry);
+    } else {
+      const logRef = doc(collection(db, "activity_logs"));
+      setDoc(logRef, { id: logRef.id, ...logEntry }).catch(err => console.error(err));
+    }
 
     setSettingsSuccessMessage("Clinical system parameters and BME policies updated successfully!");
     setTimeout(() => {
@@ -441,7 +508,7 @@ jobs:
     setTempSettings(updated);
     onUpdateSettings(updated);
 
-    addDoc(collection(db, "activity_logs"), {
+    const pubLog: Omit<SystemActivityLog, "id"> = {
       type: "asset",
       action: "GitHub Publishing Configured",
       details: `Publishing target set to GitHub Pages (${cleanOwner}/${cleanRepo}@${cleanBranch}) replacing Firebase Hosting.`,
@@ -450,7 +517,14 @@ jobs:
       userEmail: userEmail || "admin@sunmedx.com",
       userRole: "Admin",
       timestamp: new Date().toISOString()
-    }).catch(err => console.error(err));
+    };
+
+    if (!auth.currentUser) {
+      writeGuestLogEntry(pubLog);
+    } else {
+      const logRef = doc(collection(db, "activity_logs"));
+      setDoc(logRef, { id: logRef.id, ...pubLog }).catch(err => console.error(err));
+    }
 
     setPublishingSuccessMessage("GitHub Pages publishing settings saved (Firebase Hosting disabled).");
     setTimeout(() => {

@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { auth, db } from "../lib/firebase";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { UserRole } from "../types";
 
 interface LoginPageProps {
@@ -197,23 +197,44 @@ export default function LoginPage({ onExploreAsGuest, theme }: LoginPageProps) {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Seed default user document for Google sign-in to allow role config without losing settings
-      await setDoc(doc(db, "users", user.uid), {
-        email: user.email,
-        role: "Admin", // Default role
-        updatedAt: new Date().toISOString(),
-        authProvider: "google"
-      }, { merge: true });
+      // Initialize user profile document safely without failing login if rules/network delay
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const existingSnap = await getDoc(userRef);
+        if (!existingSnap.exists()) {
+          await setDoc(userRef, {
+            email: user.email || "operator@sunmedx.com",
+            role: "Admin",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            authProvider: "google"
+          });
+        } else {
+          await setDoc(userRef, {
+            email: user.email || existingSnap.data().email || "operator@sunmedx.com",
+            role: existingSnap.data().role || "Admin",
+            updatedAt: new Date().toISOString(),
+            authProvider: "google"
+          }, { merge: true });
+        }
+      } catch (profileErr) {
+        console.warn("Profile sync skipped during login:", profileErr);
+      }
 
       setInfoMsg(`Welcome, ${user.displayName || "Clinical Operator"}! Launching clinical hub...`);
       showToast(`Welcome ${user.displayName || "Operator"}!`);
+      setShowPortalModal(false);
     } catch (err: any) {
       console.warn("Google authentication warning:", err);
       let errMsg = "Google single sign-on was canceled or blocked.";
       if (err.code === "auth/popup-blocked") {
-        errMsg = "Google login popup was blocked by your browser. Please enable popups or tap Guest Access below.";
+        errMsg = "Google login popup was blocked by your browser. Please enable popups or use Guest Portal Access below.";
       } else if (err.code === "auth/popup-closed-by-user") {
-        errMsg = "Single Sign-on tab closed before completion.";
+        errMsg = "Sign-in window was closed before completion.";
+      } else if (err.code === "auth/unauthorized-domain") {
+        errMsg = `This domain (${window.location.hostname}) is not authorized in Firebase Console → Authentication → Authorized domains. Use Guest Portal Access below or add the domain.`;
+      } else if (err.code === "auth/operation-not-allowed") {
+        errMsg = "Google Sign-In is not enabled in Firebase Authentication. Use Guest Portal Access below.";
       }
       setErrorMsg(errMsg);
     } finally {
@@ -1265,41 +1286,22 @@ export default function LoginPage({ onExploreAsGuest, theme }: LoginPageProps) {
                 </div>
               )}
 
-              {/* DEMO SANDBOX CREDENTIALS OR GUEST ROLES SIMULATORS */}
+              {/* GUEST / SANDBOX PORTAL ACCESS */}
               <div className="pt-5 border-t border-slate-800/80">
                 <span className="text-[10px] font-mono tracking-widest text-slate-500 uppercase block mb-3 font-semibold">
-                  Sandbox Trial Access & Guest Roles
+                  Sandbox Portal Access
                 </span>
 
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <button
-                    onClick={() => {
-                      setShowPortalModal(false);
-                      onExploreAsGuest("Admin");
-                    }}
-                    className="flex-1 bg-slate-950 hover:bg-slate-850 p-2 text-slate-300 hover:text-white rounded-lg border border-slate-850 transition leading-none py-2.5 font-semibold text-[10px]"
-                  >
-                    Guest Admin
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowPortalModal(false);
-                      onExploreAsGuest("Technician");
-                    }}
-                    className="flex-1 bg-slate-950 hover:bg-slate-850 p-2 text-slate-300 hover:text-white rounded-lg border border-slate-850 transition leading-none py-2.5 font-semibold text-[10px]"
-                  >
-                    Tech Specialist
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowPortalModal(false);
-                      onExploreAsGuest("Procurement");
-                    }}
-                    className="flex-1 bg-slate-950 hover:bg-slate-850 p-2 text-slate-300 hover:text-white rounded-lg border border-slate-850 transition leading-none py-2.5 font-semibold text-[10px]"
-                  >
-                    Supply Officer
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPortalModal(false);
+                    onExploreAsGuest("Admin");
+                  }}
+                  className="w-full bg-slate-950 hover:bg-slate-800 p-3 text-slate-200 hover:text-white rounded-xl border border-slate-800 transition font-semibold text-xs cursor-pointer"
+                >
+                  Enter Biomedical Portal as Guest
+                </button>
               </div>
               
             </div>

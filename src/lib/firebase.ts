@@ -1,31 +1,73 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDocs, 
-  collection, 
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDocs,
+  collection,
   writeBatch,
-  getDoc,
-  addDoc,
   getDocFromServer
 } from "firebase/firestore";
+import firebaseConfig from "../../firebase-applet-config.json";
 import { initialAssets, initialSpares, initialCourses } from "../data";
 import { UserRole } from "../types";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBzzfvKhmAWGvdDeNaMMiLl6i3-KgUdfyU",
-  authDomain: "sunmedx.firebaseapp.com",
-  projectId: "sunmedx",
-  storageBucket: "sunmedx.firebasestorage.app",
-  messagingSenderId: "802052719636",
-  appId: "1:802052719636:web:cd1f80b4a52f60460e9301"
-};
-
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, "ai-studio-79542dbc-863f-47f3-8b1e-34f28c59728a");
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+export enum OperationType {
+  CREATE = "create",
+  UPDATE = "update",
+  DELETE = "delete",
+  LIST = "list",
+  GET = "get",
+  WRITE = "write"
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email
+        })) || []
+    },
+    operationType,
+    path
+  };
+  console.error("Firestore Error: ", JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Validate connection to Firestore on initialization
 async function testConnection() {
@@ -40,60 +82,57 @@ async function testConnection() {
 testConnection();
 
 /**
- * Seeds Firestore with initial medical assets and e-commerce spare parts if not already populated.
- * Uses preset IDs to avoid duplication and remain fully idempotent.
+ * Seeds Firestore with initial medical assets, spares, courses, and audit logs
+ * when an authenticated operator signs in and collections are empty.
  */
 export async function seedFirestoreDatabase() {
+  if (!auth.currentUser) {
+    return;
+  }
+
   try {
     // Check asset count
     const assetsCol = collection(db, "assets");
     const assetsSnap = await getDocs(assetsCol);
-    
+
     if (assetsSnap.empty) {
-      console.log("Seeding assets collection...");
       const batch = writeBatch(db);
       initialAssets.forEach((asset) => {
         const assetRef = doc(db, "assets", asset.id);
         batch.set(assetRef, asset);
       });
       await batch.commit();
-      console.log("Assets seeded successfully.");
     }
 
     // Check spares count
     const sparesCol = collection(db, "spares");
     const sparesSnap = await getDocs(sparesCol);
-    
+
     if (sparesSnap.empty) {
-      console.log("Seeding spares collection...");
       const batch = writeBatch(db);
       initialSpares.forEach((spare) => {
         const spareRef = doc(db, "spares", spare.id);
         batch.set(spareRef, spare);
       });
       await batch.commit();
-      console.log("Spares seeded successfully.");
     }
 
     // Check courses count
     const coursesCol = collection(db, "courses");
     const coursesSnap = await getDocs(coursesCol);
     if (coursesSnap.empty) {
-      console.log("Seeding courses collection...");
       const batch = writeBatch(db);
       initialCourses.forEach((course) => {
         const courseRef = doc(db, "courses", course.id);
         batch.set(courseRef, course);
       });
       await batch.commit();
-      console.log("Courses seeded successfully.");
     }
 
     // Check activity logs count and seed defaults if empty
     const logsCol = collection(db, "activity_logs");
     const logsSnap = await getDocs(logsCol);
     if (logsSnap.empty) {
-      console.log("Seeding activity logs collection...");
       const batch = writeBatch(db);
       const initialLogs = [
         {
@@ -129,13 +168,12 @@ export async function seedFirestoreDatabase() {
       ];
       initialLogs.forEach((log) => {
         const logRef = doc(collection(db, "activity_logs"));
-        batch.set(logRef, log);
+        batch.set(logRef, { id: logRef.id, ...log });
       });
       await batch.commit();
-      console.log("Activity logs seeded successfully.");
     }
   } catch (error) {
-    console.warn("Failed to automatically seed database. This is common if Firestore rules restrict write access before signing in:", error);
+    console.warn("Firestore seeding skipped or restricted for current user:", error);
   }
 }
 
@@ -151,20 +189,23 @@ export async function logSystemActivity(
   userEmail?: string,
   userRole?: UserRole
 ) {
+  if (!auth.currentUser) {
+    return;
+  }
   try {
-    const logsCol = collection(db, "activity_logs");
-    await addDoc(logsCol, {
+    const logRef = doc(collection(db, "activity_logs"));
+    await setDoc(logRef, {
+      id: logRef.id,
       type,
       action,
       details,
       targetId,
       targetName,
-      userEmail: userEmail || "guest.admin@sunmedx.com",
+      userEmail: userEmail || auth.currentUser.email || "admin@sunmedx.com",
       userRole: userRole || "Admin",
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    console.warn("Failed to write to activity_logs:", err);
+    handleFirestoreError(err, OperationType.CREATE, "activity_logs");
   }
 }
-
