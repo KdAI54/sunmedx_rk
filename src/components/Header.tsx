@@ -11,25 +11,23 @@ import {
   Sun,
   Moon
 } from "lucide-react";
-import { auth } from "../lib/firebase";
 import { 
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  User as FirebaseUser 
-} from "firebase/auth";
-import { UserRole } from "../types";
+  clearPortalSession,
+  registerPortalAccount,
+  signInPortalAccount
+} from "../lib/auth";
+import { PortalUser, UserRole } from "../types";
 
 interface HeaderProps {
-  user: FirebaseUser | null;
+  user: PortalUser | null;
   currentRole: UserRole;
   onRoleChange: (role: UserRole) => void;
   onOpenCart: () => void;
   cartCount: number;
   theme: "dark" | "light";
   onToggleTheme: () => void;
-  isGuest?: boolean;
-  onSignOutRequest?: () => void;
+  onAuthSuccess?: (user: PortalUser) => void;
+  onSignOutRequest: () => void;
 }
 
 export default function Header({ 
@@ -40,11 +38,12 @@ export default function Header({
   cartCount, 
   theme, 
   onToggleTheme,
-  isGuest = false,
+  onAuthSuccess,
   onSignOutRequest
 }: HeaderProps) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -57,59 +56,27 @@ export default function Header({
     setLoading(true);
 
     try {
-      if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
+      const authenticated = isSignUp
+        ? await registerPortalAccount(displayName, email, password)
+        : await signInPortalAccount(email, password);
+      if (onAuthSuccess) {
+        onAuthSuccess(authenticated);
       }
       setShowAuthModal(false);
+      setDisplayName("");
       setEmail("");
       setPassword("");
     } catch (err: any) {
-      console.error(err);
-      let errMsg = err.message || "Failed to authenticate. Try another password.";
-      if (err.code === "auth/email-already-in-use" || (err.message && err.message.includes("email-already-in-use"))) {
-        errMsg = "This corporate email address is already registered. Please click 'Already have an account? Sign In' at the bottom of this modal to log in.";
-      } else if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential" || (err.message && err.message.includes("invalid-credential"))) {
-        errMsg = "Invalid email or password. If you haven't registered yet, click 'Need a hospital account? Register' below.";
-      }
-      setError(errMsg);
+      setError(err?.message || "Failed to authenticate. Please check your credentials.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoLogin = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      // Use standard pre-configured demo account or sign in
-      await signInWithEmailAndPassword(auth, "krishnadigitalai@gmail.com", "Sunmedx123!");
-      setShowAuthModal(false);
-    } catch (err: any) {
-      // If user doesn't exist, try creating it first
-      try {
-        await createUserWithEmailAndPassword(auth, "krishnadigitalai@gmail.com", "Sunmedx123!");
-        setShowAuthModal(false);
-      } catch (signUpErr: any) {
-        setError("Demo registration failed. Please sign up with your own email.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      if (isGuest && onSignOutRequest) {
-        onSignOutRequest();
-      } else {
-        await signOut(auth);
-      }
-      setShowDropdown(false);
-    } catch (err) {
-      console.error("Sign out fail", err);
-    }
+  const handleSignOut = () => {
+    clearPortalSession();
+    setShowDropdown(false);
+    onSignOutRequest();
   };
 
   return (
@@ -200,7 +167,7 @@ export default function Header({
           </select>
         </div>
 
-        {(user || isGuest) ? (
+        {user ? (
           <div className="relative">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
@@ -215,7 +182,7 @@ export default function Header({
               <div className="hidden md:flex flex-col text-left text-xs">
                 <span className={`font-medium max-w-[140px] truncate ${
                   theme === "light" ? "text-slate-800" : "text-slate-200"
-                }`}>{user ? user.email : "demo.guest@sunmedx.com"}</span>
+                }`}>{user.displayName || user.email}</span>
                 <span className="text-[10px] text-indigo-400 font-semibold font-mono tracking-wide">
                   {currentRole === "Admin" ? "Chief Administrator" : currentRole === "Technician" ? "Clinical Bioengineer" : "Supply Chain Specialist"}
                 </span>
@@ -236,7 +203,7 @@ export default function Header({
                     <Building2 className="h-3 w-3" />
                     <span>Apex Medical Center</span>
                   </div>
-                  <p className="text-xs text-slate-400 truncate font-mono">{user ? user.email : "demo.guest@sunmedx.com"}</p>
+                  <p className="text-xs text-slate-400 truncate font-mono">{user.email}</p>
                   
                   {/* Active Role status block inside user panel */}
                   <div className={`mt-2.5 p-2 rounded-lg border text-[11px] ${
@@ -322,6 +289,22 @@ export default function Header({
                 </div>
               )}
 
+              {isSignUp && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Dr. / Eng. Name"
+                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">
                   Corporate Email
@@ -343,6 +326,7 @@ export default function Header({
                 <input
                   type="password"
                   required
+                  minLength={6}
                   placeholder="••••••••"
                   className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                   value={password}
@@ -356,30 +340,8 @@ export default function Header({
                   disabled={loading}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-3 rounded-xl text-sm font-semibold transition shadow-lg shadow-indigo-600/20"
                 >
-                  {loading ? "Authorizing..." : isSignUp ? "Create BME portal Account" : "Sign In Portal"}
+                  {loading ? "Authorizing..." : isSignUp ? "Create BME Portal Account" : "Sign In Portal"}
                 </button>
-              </div>
-
-              <div className="relative my-4 flex items-center items-stretch justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-800"></div>
-                </div>
-                <span className="relative bg-slate-900 px-3 text-xs text-slate-500 font-mono">OR</span>
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleDemoLogin}
-                  className="w-full bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 hover:border-slate-700 py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center space-x-2"
-                >
-                  <Building2 className="h-4 w-4 text-indigo-400" />
-                  <span>One-Click Admin Demo Mode</span>
-                </button>
-                <p className="text-[10px] text-slate-500 text-center mt-2">
-                  Logs in instantly as <span className="text-slate-400 font-mono">krishnadigitalai@gmail.com</span>
-                </p>
               </div>
 
               <div className="text-center pt-2">

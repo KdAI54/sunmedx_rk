@@ -1,16 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { 
-  collection, 
-  onSnapshot, 
-  updateDoc, 
-  doc, 
-  writeBatch,
-  getDoc,
-  setDoc
-} from "firebase/firestore";
-import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { db, auth, seedFirestoreDatabase, logSystemActivity } from "./lib/firebase";
-import { Asset, SparePart, ServiceTicket, Course, CartItem, UserRole } from "./types";
+import { Asset, SparePart, ServiceTicket, Course, CartItem, UserRole, PortalUser } from "./types";
+import { getPortalSession, clearPortalSession } from "./lib/auth";
 import { initialAssets, initialSpares, initialCourses } from "./data";
 
 // Subcomponents
@@ -25,17 +15,16 @@ import TrainingCertifications from "./components/TrainingCertifications";
 import SystemActivityLogComp from "./components/SystemActivityLog";
 import LoginPage from "./components/LoginPage";
 
-import { Activity, ShieldAlert, Sparkles, Building2 } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
+
+const PORTAL_ASSETS_KEY = "sunmedx_portal_assets";
+const PORTAL_SPARES_KEY = "sunmedx_portal_spares";
+const PORTAL_TICKETS_KEY = "sunmedx_portal_tickets";
+const PORTAL_COURSES_KEY = "sunmedx_portal_courses";
+const PORTAL_LOGS_KEY = "sunmedx_portal_logs";
 
 export default function App() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
-  
-  // User authorization / session tracking for demo/guest sandboxes
-  const [isGuest, setIsGuest] = useState<boolean>(() => {
-    return localStorage.getItem("sunmedx_is_guest") === "true";
-  });
+  const [user, setUser] = useState<PortalUser | null>(() => getPortalSession());
 
   // Core Data Collections
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -97,79 +86,16 @@ export default function App() {
     localStorage.setItem("sunmedx_admin_settings", JSON.stringify(newSettings));
   };
 
-  // 1. Firebase Authentication listener & Role synchronization
-  const [userRole, setUserRole] = useState<UserRole>("Admin");
-  const [roleSyncedForUid, setRoleSyncedForUid] = useState<string | null>(null);
+  // 1. Portal Role synchronization
+  const [userRole, setUserRole] = useState<UserRole>(() => getPortalSession()?.role || "Admin");
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (!currentUser) {
-        setRoleSyncedForUid(null);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch or configure user role on authentication shifts
-  useEffect(() => {
-    if (!user) {
-      if (isGuest) {
-        const savedGuestRole = localStorage.getItem("sunmedx_guest_role") as UserRole;
-        if (savedGuestRole) {
-          setUserRole(savedGuestRole);
-          return;
-        }
-      }
+    if (user?.role) {
+      setUserRole(user.role);
+    } else {
       setUserRole("Admin");
-      return;
     }
-
-    let cancelled = false;
-    const fetchUserRole = async () => {
-      try {
-        const userDocRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          if (data && data.role && !cancelled) {
-            setUserRole(data.role as UserRole);
-            setRoleSyncedForUid(user.uid);
-            return;
-          }
-        }
-
-        // Default new authenticated portal users to Admin so database seeding & admin tools work immediately
-        const defaultRole: UserRole = "Admin";
-        if (!cancelled) {
-          setUserRole(defaultRole);
-        }
-
-        await setDoc(userDocRef, {
-          email: user.email || "operator@sunmedx.com",
-          role: defaultRole,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          authProvider: user.providerData?.[0]?.providerId === "google.com" ? "google" : "email"
-        });
-      } catch (err) {
-        console.warn("Failed to retrieve or seed Firestore role, applying local default:", err);
-        if (!cancelled) {
-          setUserRole("Admin");
-        }
-      } finally {
-        if (!cancelled) {
-          setRoleSyncedForUid(user.uid);
-        }
-      }
-    };
-
-    fetchUserRole();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, isGuest]);
+  }, [user]);
 
   // Tab allowance validator
   const checkIsTabAllowed = (role: UserRole, tab: SidebarTab): boolean => {
@@ -183,12 +109,9 @@ export default function App() {
     return true;
   };
 
-  // Swaps simulated role in UI state (without mutating protected Firestore role field)
+  // Swaps simulated role in UI state
   const handleRoleChange = async (newRole: UserRole) => {
     setUserRole(newRole);
-    if (isGuest) {
-      localStorage.setItem("sunmedx_guest_role", newRole);
-    }
 
     // Move away from tab if newly unauthorized
     const allowed = checkIsTabAllowed(newRole, currentTab);
@@ -197,128 +120,34 @@ export default function App() {
     }
   };
 
-  // 2. Database seeding and data synchronization (Firestore when signed in, localStorage/defaults for Guest)
+  // 2. Portal dataset initialization (seeded from local defaults)
   useEffect(() => {
-    if (!user) {
-      // Guest / unauthenticated mode: load local persisted or initial dataset so portal works cleanly without Firestore permission errors
-      try {
-        const savedAssets = localStorage.getItem("sunmedx_guest_assets");
-        setAssets(savedAssets ? JSON.parse(savedAssets) : initialAssets);
+    try {
+      const savedAssets = localStorage.getItem(PORTAL_ASSETS_KEY) || localStorage.getItem("sunmedx_guest_assets");
+      const parsedAssets = savedAssets ? JSON.parse(savedAssets) : initialAssets;
+      setAssets(Array.isArray(parsedAssets) && parsedAssets.length > 0 ? parsedAssets : initialAssets);
 
-        const savedSpares = localStorage.getItem("sunmedx_guest_spares");
-        setSpares(savedSpares ? JSON.parse(savedSpares) : initialSpares);
+      const savedSpares = localStorage.getItem(PORTAL_SPARES_KEY) || localStorage.getItem("sunmedx_guest_spares");
+      const parsedSpares = savedSpares ? JSON.parse(savedSpares) : initialSpares;
+      setSpares(Array.isArray(parsedSpares) && parsedSpares.length > 0 ? parsedSpares : initialSpares);
 
-        const savedTickets = localStorage.getItem("sunmedx_guest_tickets");
-        setTickets(savedTickets ? JSON.parse(savedTickets) : []);
+      const savedTickets = localStorage.getItem(PORTAL_TICKETS_KEY) || localStorage.getItem("sunmedx_guest_tickets");
+      setTickets(savedTickets ? JSON.parse(savedTickets) : []);
 
-        const savedCourses = localStorage.getItem("sunmedx_guest_courses");
-        setCourses(savedCourses ? JSON.parse(savedCourses) : initialCourses);
-      } catch (err) {
-        console.warn("Guest cache load failed, restoring defaults:", err);
-        setAssets(initialAssets);
-        setSpares(initialSpares);
-        setTickets([]);
-        setCourses(initialCourses);
-      }
-      setSeeding(false);
-      return;
+      const savedCourses = localStorage.getItem(PORTAL_COURSES_KEY) || localStorage.getItem("sunmedx_guest_courses");
+      const parsedCourses = savedCourses ? JSON.parse(savedCourses) : initialCourses;
+      setCourses(Array.isArray(parsedCourses) && parsedCourses.length > 0 ? parsedCourses : initialCourses);
+    } catch (err) {
+      console.warn("Portal cache load failed, restoring defaults:", err);
+      setAssets(initialAssets);
+      setSpares(initialSpares);
+      setTickets([]);
+      setCourses(initialCourses);
     }
+  }, [user]);
 
-    // Wait until user profile role doc is synced before seeding/attaching authenticated listeners
-    if (roleSyncedForUid !== user.uid) {
-      return;
-    }
-
-    let active = true;
-    const runSeeder = async () => {
-      setSeeding(true);
-      try {
-        await seedFirestoreDatabase();
-      } catch (err) {
-        console.warn("Seeder skipped or failed, proceeding with listeners:", err);
-      } finally {
-        if (active) {
-          setSeeding(false);
-        }
-      }
-    };
-    runSeeder();
-
-    // Setup Firestore synchronization for Clinical Assets
-    const unsubscribeAssets = onSnapshot(
-      collection(db, "assets"),
-      (snapshot) => {
-        const list: Asset[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Asset);
-        });
-        setAssets(list.length > 0 ? list : initialAssets);
-      },
-      (error) => {
-        console.warn("Assets Firestore access throttled or offline, loading fallback:", error);
-        setAssets((prev) => (prev.length > 0 ? prev : initialAssets));
-      }
-    );
-
-    // Setup Firestore synchronization for Spare Parts catalog
-    const unsubscribeSpares = onSnapshot(
-      collection(db, "spares"),
-      (snapshot) => {
-        const list: SparePart[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as SparePart);
-        });
-        setSpares(list.length > 0 ? list : initialSpares);
-      },
-      (error) => {
-        console.warn("Spares Firestore access throttled or offline:", error);
-        setSpares((prev) => (prev.length > 0 ? prev : initialSpares));
-      }
-    );
-
-    // Setup Firestore synchronization for Technical Service logs
-    const unsubscribeTickets = onSnapshot(
-      collection(db, "tickets"),
-      (snapshot) => {
-        const list: ServiceTicket[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as ServiceTicket);
-        });
-        list.sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
-        setTickets(list);
-      },
-      (error) => {
-        console.warn("Tickets Firestore access restricted:", error);
-      }
-    );
-
-    // Setup Firestore synchronization for Training Courses catalog
-    const unsubscribeCourses = onSnapshot(
-      collection(db, "courses"),
-      (snapshot) => {
-        const list: Course[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Course);
-        });
-        setCourses(list.length > 0 ? list : initialCourses);
-      },
-      (error) => {
-        console.warn("Courses Firestore access throttled:", error);
-        setCourses((prev) => (prev.length > 0 ? prev : initialCourses));
-      }
-    );
-
-    return () => {
-      active = false;
-      unsubscribeAssets();
-      unsubscribeSpares();
-      unsubscribeTickets();
-      unsubscribeCourses();
-    };
-  }, [user, roleSyncedForUid]);
-
-  // Helper to append guest activity log to localStorage when unauthenticated
-  const appendGuestLog = (
+  // Helper to append activity log entry to localStorage
+  const appendPortalLog = (
     type: "asset" | "ticket" | "procurement",
     action: string,
     details: string,
@@ -326,156 +155,87 @@ export default function App() {
     targetName: string
   ) => {
     try {
-      const existing = JSON.parse(localStorage.getItem("sunmedx_guest_logs") || "[]");
+      const existing = JSON.parse(
+        localStorage.getItem(PORTAL_LOGS_KEY) || localStorage.getItem("sunmedx_guest_logs") || "[]"
+      );
       const newEntry = {
-        id: `LOG-${Date.now()}`,
+        id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         type,
         action,
         details,
         targetId,
         targetName,
-        userEmail: "guest.admin@sunmedx.com",
+        userEmail: user?.email || "operator@sunmedx.com",
         userRole,
         timestamp: new Date().toISOString()
       };
-      localStorage.setItem("sunmedx_guest_logs", JSON.stringify([newEntry, ...existing].slice(0, 100)));
+      localStorage.setItem(PORTAL_LOGS_KEY, JSON.stringify([newEntry, ...existing].slice(0, 100)));
     } catch (err) {
-      console.warn("Failed saving guest log:", err);
+      console.warn("Failed saving portal log:", err);
     }
   };
 
   // 3. Service Ticket Dispatch Trigger
   const handleAddTicket = async (ticketData: Omit<ServiceTicket, "id" | "loggedAt" | "loggedBy">) => {
-    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
+    const operatorEmail = user?.email || "operator@sunmedx.com";
     const nowIso = new Date().toISOString();
 
-    if (!user) {
-      const guestTicket: ServiceTicket = {
-        id: `TCK-${Math.floor(1000 + Math.random() * 9000)}`,
-        ...ticketData,
-        loggedBy: operatorEmail,
-        loggedAt: nowIso
-      };
-      setTickets((prev) => {
-        const next = [guestTicket, ...prev];
-        localStorage.setItem("sunmedx_guest_tickets", JSON.stringify(next));
-        return next;
-      });
-      appendGuestLog("ticket", "New Service Ticket Logged", `Created ${ticketData.priority} priority ticket for ${ticketData.assetName}: "${ticketData.issue}".`, ticketData.assetId, ticketData.assetName);
-      return;
-    }
-
-    try {
-      const ticketRef = doc(collection(db, "tickets"));
-      await setDoc(ticketRef, {
-        id: ticketRef.id,
-        ...ticketData,
-        loggedBy: operatorEmail,
-        loggedAt: nowIso
-      });
-
-      // Real-time system activity logging
-      await logSystemActivity(
-        "ticket",
-        "New Service Ticket Logged",
-        `Created ${ticketData.priority} priority ticket for ${ticketData.assetName}: "${ticketData.issue}".`,
-        ticketData.assetId,
-        ticketData.assetName,
-        operatorEmail,
-        userRole
-      );
-    } catch (err) {
-      console.error("Failed to write ticket:", err);
-      // Fallback local logging
-      const fallbackTicket: ServiceTicket = {
-        id: `TCK-${Math.floor(1000 + Math.random() * 9000)}`,
-        ...ticketData,
-        loggedBy: operatorEmail,
-        loggedAt: new Date().toISOString()
-      };
-      setTickets((prev) => [fallbackTicket, ...prev]);
-    }
+    const newTicket: ServiceTicket = {
+      id: `TCK-${Math.floor(1000 + Math.random() * 9000)}`,
+      ...ticketData,
+      loggedBy: operatorEmail,
+      loggedAt: nowIso
+    };
+    setTickets((prev) => {
+      const next = [newTicket, ...prev];
+      localStorage.setItem(PORTAL_TICKETS_KEY, JSON.stringify(next));
+      return next;
+    });
+    appendPortalLog(
+      "ticket",
+      "New Service Ticket Logged",
+      `Created ${ticketData.priority} priority ticket for ${ticketData.assetName}: "${ticketData.issue}".`,
+      ticketData.assetId,
+      ticketData.assetName
+    );
   };
 
-  // 4. Asset Status updater with Firestore synchronization
+  // 4. Asset Status updater
   const handleUpdateAssetStatus = async (assetId: string, newStatus: Asset["status"]) => {
-    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
-    const targetAsset = assets.find(a => a.id === assetId);
+    const targetAsset = assets.find((a) => a.id === assetId);
     const assetName = targetAsset ? targetAsset.name : "Medical Asset";
 
-    if (!user) {
-      setAssets((prev) => {
-        const next = prev.map((asset) => asset.id === assetId ? { ...asset, status: newStatus } : asset);
-        localStorage.setItem("sunmedx_guest_assets", JSON.stringify(next));
-        return next;
-      });
-      appendGuestLog("asset", "Asset Status Changed", `Active status of ${assetName} was updated to "${newStatus}".`, assetId, assetName);
-      return;
-    }
-
-    try {
-      const assetRef = doc(db, "assets", assetId);
-      await updateDoc(assetRef, { status: newStatus });
-
-      // Real-time system activity logging
-      await logSystemActivity(
-        "asset",
-        "Asset Status Changed",
-        `Active status of ${assetName} was updated to "${newStatus}".`,
-        assetId,
-        assetName,
-        operatorEmail,
-        userRole
-      );
-    } catch (err) {
-      console.warn("Failed to sync status update with Firestore, applying locally:", err);
-      setAssets((prev) => 
-        prev.map((asset) => asset.id === assetId ? { ...asset, status: newStatus } : asset)
-      );
-    }
+    setAssets((prev) => {
+      const next = prev.map((asset) => (asset.id === assetId ? { ...asset, status: newStatus } : asset));
+      localStorage.setItem(PORTAL_ASSETS_KEY, JSON.stringify(next));
+      return next;
+    });
+    appendPortalLog(
+      "asset",
+      "Asset Status Changed",
+      `Active status of ${assetName} was updated to "${newStatus}".`,
+      assetId,
+      assetName
+    );
   };
 
   // 4b. Admin Asset Registration/Data Entry
   const handleAddAsset = async (assetData: Omit<Asset, "id">) => {
-    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const customId = `AST-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newAsset: Asset = { id: customId, ...assetData };
 
-    if (!user) {
-      const guestAsset: Asset = { id: customId, ...assetData };
-      setAssets((prev) => {
-        const next = [...prev, guestAsset];
-        localStorage.setItem("sunmedx_guest_assets", JSON.stringify(next));
-        return next;
-      });
-      appendGuestLog("asset", "New Asset Commissioned", `Admin registered new corporate asset: ${assetData.name} (${assetData.manufacturer} ${assetData.model}) to ${assetData.department}.`, customId, assetData.name);
-      return;
-    }
-
-    try {
-      const assetRef = doc(db, "assets", customId);
-      await setDoc(assetRef, {
-        id: customId,
-        ...assetData,
-      });
-
-      // Real-time system activity logging
-      await logSystemActivity(
-        "asset",
-        "New Asset Commissioned",
-        `Admin registered new corporate asset: ${assetData.name} (${assetData.manufacturer} ${assetData.model}) to ${assetData.department}.`,
-        customId,
-        assetData.name,
-        operatorEmail,
-        userRole
-      );
-    } catch (err) {
-      console.error("Failed to add asset:", err);
-      const fallbackAsset: Asset = {
-        id: customId,
-        ...assetData
-      };
-      setAssets((prev) => [...prev, fallbackAsset]);
-    }
+    setAssets((prev) => {
+      const next = [...prev, newAsset];
+      localStorage.setItem(PORTAL_ASSETS_KEY, JSON.stringify(next));
+      return next;
+    });
+    appendPortalLog(
+      "asset",
+      "New Asset Commissioned",
+      `Admin registered new corporate asset: ${assetData.name} (${assetData.manufacturer} ${assetData.model}) to ${assetData.department}.`,
+      customId,
+      assetData.name
+    );
   };
 
   // 5. Commerce state: Add to Cart
@@ -483,9 +243,9 @@ export default function App() {
     setCart((prevCart) => {
       const existing = prevCart.find((item) => item.id === part.id);
       if (existing) {
-        return prevCart.map((item) => 
-          item.id === part.id 
-            ? { ...item, quantity: Math.min(part.stock, item.quantity + quantity) } 
+        return prevCart.map((item) =>
+          item.id === part.id
+            ? { ...item, quantity: Math.min(part.stock, item.quantity + quantity) }
             : item
         );
       }
@@ -500,8 +260,8 @@ export default function App() {
       handleRemoveFromCart(id);
       return;
     }
-    setCart((prevCart) => 
-      prevCart.map((item) => item.id === id ? { ...item, quantity } : item)
+    setCart((prevCart) =>
+      prevCart.map((item) => (item.id === id ? { ...item, quantity } : item))
     );
   };
 
@@ -510,70 +270,29 @@ export default function App() {
     setCart((prevCart) => prevCart.filter((item) => item.id !== id));
   };
 
-  // 8. Commerce state: BME portal Checkout subtraction directly in Database
+  // 8. Commerce state: BME portal Checkout subtraction
   const handleCheckout = async () => {
-    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const checkedOutCart = [...cart];
 
-    if (!user) {
-      setSpares((prevSpares) => {
-        const next = prevSpares.map((spare) => {
-          const item = cart.find((i) => i.id === spare.id);
-          return item ? { ...spare, stock: Math.max(0, spare.stock - item.quantity) } : spare;
-        });
-        localStorage.setItem("sunmedx_guest_spares", JSON.stringify(next));
-        return next;
+    setSpares((prevSpares) => {
+      const next = prevSpares.map((spare) => {
+        const item = checkedOutCart.find((i) => i.id === spare.id);
+        return item ? { ...spare, stock: Math.max(0, spare.stock - item.quantity) } : spare;
       });
-      setCart([]);
-      checkedOutCart.forEach((item) => {
-        appendGuestLog(
-          "procurement",
-          "E-Commerce Checkout Completed",
-          `Checked out ${item.quantity} unit(s) of compatible spare: ${item.product.name}. Stock updated to ${Math.max(0, item.product.stock - item.quantity)}.`,
-          item.id,
-          item.product.name
-        );
-      });
-      return;
-    }
+      localStorage.setItem(PORTAL_SPARES_KEY, JSON.stringify(next));
+      return next;
+    });
+    setCart([]);
 
-    try {
-      const batch = writeBatch(db);
-      
-      for (const item of cart) {
-        const spareRef = doc(db, "spares", item.id);
-        const newStock = Math.max(0, item.product.stock - item.quantity);
-        batch.update(spareRef, { stock: newStock });
-      }
-
-      await batch.commit();
-      setCart([]); // Clear cart
-
-      // Post-checkout real-time system activity logging for all purchased spares
-      for (const item of checkedOutCart) {
-        await logSystemActivity(
-          "procurement",
-          "E-Commerce Checkout Completed",
-          `Checked out ${item.quantity} unit(s) of compatible spare: ${item.product.name}. Stock updated to ${Math.max(0, item.product.stock - item.quantity)}.`,
-          item.id,
-          item.product.name,
-          operatorEmail,
-          userRole
-        );
-      }
-    } catch (err) {
-      console.warn("Failed to checkout with Firestore, applying local subtraction:", err);
-      setSpares((prevSpares) => 
-        prevSpares.map((spare) => {
-          const item = cart.find((i) => i.id === spare.id);
-          if (item) {
-            return { ...spare, stock: Math.max(0, spare.stock - item.quantity) };
-          }
-          return spare;
-        })
+    checkedOutCart.forEach((item) => {
+      appendPortalLog(
+        "procurement",
+        "E-Commerce Checkout Completed",
+        `Checked out ${item.quantity} unit(s) of compatible spare: ${item.product.name}. Stock updated to ${Math.max(0, item.product.stock - item.quantity)}.`,
+        item.id,
+        item.product.name
       );
-      setCart([]);
-    }
+    });
   };
 
   // 9. Course Enroll action
@@ -585,67 +304,22 @@ export default function App() {
 
   // 9b. Dynamic AI Course Generation creation
   const handleAddCourse = async (courseData: Omit<Course, "id">) => {
-    const operatorEmail = user ? user.email || "operator@sunmedx.com" : "guest.admin@sunmedx.com";
     const customId = `CRS-${Math.floor(10000 + Math.random() * 90000)}`;
+    const newCourse: Course = { id: customId, ...courseData };
 
-    if (!user) {
-      const guestCourse: Course = { id: customId, ...courseData };
-      setCourses((prev) => {
-        const next = [...prev, guestCourse];
-        localStorage.setItem("sunmedx_guest_courses", JSON.stringify(next));
-        return next;
-      });
-      appendGuestLog("procurement", "Academy Course Generated", `Generated dynamic accreditation program: ${courseData.title} (${courseData.code}) focusing on target: ${courseData.level} skills.`, customId, courseData.title);
-      return;
-    }
-
-    try {
-      const courseRef = doc(db, "courses", customId);
-      await setDoc(courseRef, {
-        id: customId,
-        ...courseData,
-      });
-
-      // Log system activity audit log
-      await logSystemActivity(
-        "procurement",
-        "Academy Course Generated",
-        `Generated dynamic accreditation program: ${courseData.title} (${courseData.code}) focusing on target: ${courseData.level} skills.`,
-        customId,
-        courseData.title,
-        operatorEmail,
-        userRole
-      );
-    } catch (err) {
-      console.error("Failed to append dynamic course to Firestore, running fallback:", err);
-      const fallbackCourse: Course = {
-        id: customId,
-        ...courseData
-      };
-      setCourses((prevCourseList) => [...prevCourseList, fallbackCourse]);
-    }
-  };
-
-  // Loading Screen for Auth & Database seeding
-  if (loading || seeding) {
-    return (
-      <div className="bg-slate-950 h-screen w-screen flex flex-col items-center justify-center text-slate-300 select-none">
-        <div className="relative flex items-center justify-center">
-          {/* Pulsing ring */}
-          <div className="absolute inset-0 bg-indigo-600/10 h-20 w-20 rounded-full blur-xl animate-pulse" />
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl animate-spin text-indigo-500" style={{ animationDuration: "3s" }}>
-            <Activity className="h-10 w-10 stroke-[2]" />
-          </div>
-        </div>
-        <div className="mt-6 text-center space-y-2">
-          <h1 className="font-sans font-bold text-lg text-white tracking-widest uppercase">SunMedx Services</h1>
-          <p className="text-xs text-indigo-400 font-mono tracking-wider">
-            {seeding ? "POPULATING BIOMEDICAL FIREBASE STATE..." : "AUTHORIZING BME PORTAL CREDENTIALS..."}
-          </p>
-        </div>
-      </div>
+    setCourses((prev) => {
+      const next = [...prev, newCourse];
+      localStorage.setItem(PORTAL_COURSES_KEY, JSON.stringify(next));
+      return next;
+    });
+    appendPortalLog(
+      "procurement",
+      "Academy Course Generated",
+      `Generated dynamic accreditation program: ${courseData.title} (${courseData.code}) focusing on target: ${courseData.level} skills.`,
+      customId,
+      courseData.title
     );
-  }
+  };
 
   // Active view router based on Sidebar tab selection
   const renderMainContent = () => {
@@ -804,17 +478,14 @@ export default function App() {
     }
   };
 
-  // Render pristine standalone login page if unauthenticated and not in Guest evaluation mode
-  if (!user && !isGuest) {
+  // Render standalone landing/sign-in page if unauthenticated
+  if (!user) {
     return (
-      <LoginPage 
+      <LoginPage
         theme={theme}
-        onExploreAsGuest={(selectedRole) => {
-          setIsGuest(true);
-          localStorage.setItem("sunmedx_is_guest", "true");
-          const role = selectedRole || "Admin";
-          setUserRole(role);
-          localStorage.setItem("sunmedx_guest_role", role);
+        onAuthSuccess={(portalUser) => {
+          setUser(portalUser);
+          setUserRole(portalUser.role);
         }}
       />
     );
@@ -836,11 +507,13 @@ export default function App() {
         cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
-        isGuest={isGuest}
+        onAuthSuccess={(portalUser) => {
+          setUser(portalUser);
+          setUserRole(portalUser.role);
+        }}
         onSignOutRequest={() => {
-          setIsGuest(false);
-          localStorage.removeItem("sunmedx_is_guest");
-          localStorage.removeItem("sunmedx_guest_role");
+          clearPortalSession();
+          setUser(null);
         }}
       />
 

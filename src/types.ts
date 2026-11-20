@@ -1,5 +1,13 @@
 export type UserRole = "Admin" | "Technician" | "Procurement";
 
+export interface PortalUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  authProvider: "portal-credentials";
+}
+
 export interface Asset {
   id: string;
   name: string;

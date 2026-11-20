@@ -29,13 +29,11 @@ import {
   Sliders,
   Laptop
 } from "lucide-react";
-import { auth, db } from "../lib/firebase";
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { UserRole } from "../types";
+import { registerPortalAccount, signInPortalAccount } from "../lib/auth";
+import { PortalUser } from "../types";
 
 interface LoginPageProps {
-  onExploreAsGuest: (selectedRole?: UserRole) => void;
+  onAuthSuccess: (user: PortalUser) => void;
   theme: "dark" | "light";
 }
 
@@ -128,12 +126,16 @@ interface CartItem {
   quantity: number;
 }
 
-export default function LoginPage({ onExploreAsGuest, theme }: LoginPageProps) {
+export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
   // Authentication states
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [infoMsg, setInfoMsg] = useState("");
   const [showPortalModal, setShowPortalModal] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "register">("signin");
+  const [fullName, setFullName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
 
   // Shop & cart states
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -185,58 +187,24 @@ export default function LoginPage({ onExploreAsGuest, theme }: LoginPageProps) {
     }, 3500);
   };
 
-  const handleGoogleAuth = async () => {
+  const handlePortalAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg("");
     setInfoMsg("");
     setLoading(true);
 
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const portalUser =
+        authMode === "register"
+          ? await registerPortalAccount(fullName, authEmail, authPassword)
+          : await signInPortalAccount(authEmail, authPassword);
 
-      // Initialize user profile document safely without failing login if rules/network delay
-      try {
-        const userRef = doc(db, "users", user.uid);
-        const existingSnap = await getDoc(userRef);
-        if (!existingSnap.exists()) {
-          await setDoc(userRef, {
-            email: user.email || "operator@sunmedx.com",
-            role: "Admin",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            authProvider: "google"
-          });
-        } else {
-          await setDoc(userRef, {
-            email: user.email || existingSnap.data().email || "operator@sunmedx.com",
-            role: existingSnap.data().role || "Admin",
-            updatedAt: new Date().toISOString(),
-            authProvider: "google"
-          }, { merge: true });
-        }
-      } catch (profileErr) {
-        console.warn("Profile sync skipped during login:", profileErr);
-      }
-
-      setInfoMsg(`Welcome, ${user.displayName || "Clinical Operator"}! Launching clinical hub...`);
-      showToast(`Welcome ${user.displayName || "Operator"}!`);
+      setInfoMsg(`Welcome, ${portalUser.displayName}! Launching clinical hub...`);
+      showToast(`Welcome ${portalUser.displayName}!`);
       setShowPortalModal(false);
+      onAuthSuccess(portalUser);
     } catch (err: any) {
-      console.warn("Google authentication warning:", err);
-      let errMsg = "Google single sign-on was canceled or blocked.";
-      if (err.code === "auth/popup-blocked") {
-        errMsg = "Google login popup was blocked by your browser. Please enable popups or use Guest Portal Access below.";
-      } else if (err.code === "auth/popup-closed-by-user") {
-        errMsg = "Sign-in window was closed before completion.";
-      } else if (err.code === "auth/unauthorized-domain") {
-        errMsg = `This domain (${window.location.hostname}) is not authorized in Firebase Console → Authentication → Authorized domains. Use Guest Portal Access below or add the domain.`;
-      } else if (err.code === "auth/operation-not-allowed") {
-        errMsg = "Google Sign-In is not enabled in Firebase Authentication. Use Guest Portal Access below.";
-      }
-      setErrorMsg(errMsg);
+      setErrorMsg(err?.message || "Authentication failed. Please check your credentials.");
     } finally {
       setLoading(false);
     }
@@ -1236,73 +1204,123 @@ export default function LoginPage({ onExploreAsGuest, theme }: LoginPageProps) {
               <div className="space-y-1">
                 <h3 className="font-display font-black text-xl text-white">Biomedical Portal Entry</h3>
                 <p className="text-slate-400 text-[11px] leading-relaxed max-w-sm mx-auto">
-                  Sign in with unified corporate Google SSO credentials to log medical asset inventories, raise helpdesk support logs, or evaluate audit policies.
+                  {authMode === "signin"
+                    ? "Sign in with your SunMedx Portal credentials to manage medical assets, service tickets, and compliance logs."
+                    : "Create your hospital operator account to access the Biomedical Database Portal."}
                 </p>
               </div>
 
-              {/* Real SSO Google single sign on */}
-              <button
-                type="button"
-                onClick={handleGoogleAuth}
-                disabled={loading}
-                className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center space-x-3 cursor-pointer bg-white hover:bg-slate-50 text-slate-900 transition-all border border-slate-200 shadow-xl disabled:opacity-50 active:scale-98"
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
-                ) : (
-                  <svg className="h-4.5 w-4.5" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.927h6.6c-.29 1.53-1.14 2.82-2.4 3.68v3.053h3.87c2.27-2.09 3.57-5.17 3.57-8.82z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.97-1.08 7.96-2.91l-3.87-3.053c-1.08.72-2.45 1.16-4.09 1.16-3.15 0-5.81-2.13-6.76-5.01H1.31v3.16C3.29 21.35 7.37 24 12 24z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.24 14.187C5 13.387 4.87 12.537 4.87 11.687s.13-1.7.37-2.5v-3.16H1.31C.47 7.737 0 9.657 0 11.687s.47 3.95 1.31 5.66l3.93-3.16z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.96 1.19 15.24 0 12 0 7.37 0 3.29 2.65 1.31 6.027l3.93 3.16c.95-2.88 3.61-5.01 6.76-5.01z"
-                    />
-                  </svg>
-                )}
-                <span className="font-bold">Google Enterprise SSO</span>
-              </button>
-
-              {errorMsg && (
-                <div className="bg-rose-500/10 border border-rose-500/25 p-3 rounded-xl text-left text-[11px] text-rose-300 flex gap-2">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-450" />
-                  <span className="leading-relaxed">{errorMsg}</span>
-                </div>
-              )}
-
-              {infoMsg && (
-                <div className="bg-emerald-500/10 border border-emerald-500/25 p-3 rounded-xl text-left text-[11px] text-emerald-300 flex gap-2">
-                  <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
-                  <span className="leading-relaxed">{infoMsg}</span>
-                </div>
-              )}
-
-              {/* GUEST / SANDBOX PORTAL ACCESS */}
-              <div className="pt-5 border-t border-slate-800/80">
-                <span className="text-[10px] font-mono tracking-widest text-slate-500 uppercase block mb-3 font-semibold">
-                  Sandbox Portal Access
-                </span>
-
+              {/* Sign In / Create Account Switcher */}
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => {
-                    setShowPortalModal(false);
-                    onExploreAsGuest("Admin");
+                    setAuthMode("signin");
+                    setErrorMsg("");
                   }}
-                  className="w-full bg-slate-950 hover:bg-slate-800 p-3 text-slate-200 hover:text-white rounded-xl border border-slate-800 transition font-semibold text-xs cursor-pointer"
+                  className={`py-2 rounded-lg transition cursor-pointer ${
+                    authMode === "signin"
+                      ? "bg-gradient-to-r from-[#FF6B00] to-orange-500 text-white shadow"
+                      : "text-slate-400 hover:text-white"
+                  }`}
                 >
-                  Enter Biomedical Portal as Guest
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setErrorMsg("");
+                  }}
+                  className={`py-2 rounded-lg transition cursor-pointer ${
+                    authMode === "register"
+                      ? "bg-gradient-to-r from-[#FF6B00] to-orange-500 text-white shadow"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Create Account
                 </button>
               </div>
+
+              <form onSubmit={handlePortalAuthSubmit} className="space-y-3 text-left">
+                {authMode === "register" && (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Dr. / Eng. Name"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF6B00] transition"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Corporate Email
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="operator@hospital.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF6B00] transition"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Minimum 6 characters"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#FF6B00] transition"
+                  />
+                </div>
+
+                {errorMsg && (
+                  <div className="bg-rose-500/10 border border-rose-500/25 p-3 rounded-xl text-left text-[11px] text-rose-300 flex gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+                    <span className="leading-relaxed">{errorMsg}</span>
+                  </div>
+                )}
+
+                {infoMsg && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 p-3 rounded-xl text-left text-[11px] text-emerald-300 flex gap-2">
+                    <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
+                    <span className="leading-relaxed">{infoMsg}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer bg-gradient-to-r from-red-600 via-[#FF6B00] to-amber-500 hover:opacity-95 text-white transition-all shadow-lg disabled:opacity-50"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Lock className="h-3.5 w-3.5" />
+                  )}
+                  <span>
+                    {loading
+                      ? "Verifying Credentials..."
+                      : authMode === "register"
+                        ? "Register & Enter Portal"
+                        : "Sign In to Portal"}
+                  </span>
+                </button>
+              </form>
               
             </div>
           </div>

@@ -1,16 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  limit, 
-  getDocs,
-  doc,
-  setDoc,
-  writeBatch
-} from "firebase/firestore";
-import { db, auth } from "../lib/firebase";
 import { SystemActivityLog, UserRole } from "../types";
 import { 
   History, 
@@ -98,51 +86,75 @@ export default function SystemActivityLogComp({
     setTempSettings({ ...settings });
   }, [settings]);
 
-  // Helper to append a log locally in Guest Mode
-  const writeGuestLogEntry = (entry: Omit<SystemActivityLog, "id">) => {
-    const newLog: SystemActivityLog = { id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`, ...entry };
+  const LOGS_STORAGE_KEY = "sunmedx_portal_logs";
+
+  const appendLocalLogEntry = (entry: Omit<SystemActivityLog, "id">) => {
+    const newLog: SystemActivityLog = {
+      id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      ...entry
+    };
     setLogs((prev) => {
       const next = [newLog, ...prev].slice(0, 100);
       try {
-        localStorage.setItem("sunmedx_guest_logs", JSON.stringify(next));
+        localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(next));
       } catch (e) {
-        console.warn("Could not save guest log:", e);
+        console.warn("Could not save portal log:", e);
       }
       return next;
     });
   };
 
-  // Read real-time activity logs from Firestore when signed in, or localStorage in Guest Mode
+  // Load portal activity logs from localStorage (seeded with initial audit trail if empty)
   useEffect(() => {
     setLoading(true);
-    if (!auth.currentUser) {
-      try {
-        const saved = localStorage.getItem("sunmedx_guest_logs");
-        setLogs(saved ? JSON.parse(saved) : []);
-      } catch (e) {
-        setLogs([]);
+    try {
+      const saved = localStorage.getItem(LOGS_STORAGE_KEY) || localStorage.getItem("sunmedx_guest_logs");
+      if (saved) {
+        setLogs(JSON.parse(saved));
+      } else {
+        const seededLogs: SystemActivityLog[] = [
+          {
+            id: "LOG-INIT-1",
+            type: "asset",
+            action: "Asset Status Changed",
+            details: "MRI Scanner 3T status was verified as Operational.",
+            targetId: "AST-4401",
+            targetName: "MRI Scanner 3T",
+            userEmail: userEmail || "admin@sunmedx.com",
+            userRole: "Admin",
+            timestamp: new Date(Date.now() - 3600000 * 2.5).toISOString()
+          },
+          {
+            id: "LOG-INIT-2",
+            type: "ticket",
+            action: "New Service Ticket Logged",
+            details: "Reported calibration drift in Patient Monitor S12.",
+            targetId: "TCK-8820",
+            targetName: "Patient Monitor S12",
+            userEmail: "bio.tech1@sunmedx.com",
+            userRole: "Technician",
+            timestamp: new Date(Date.now() - 3600000 * 5).toISOString()
+          },
+          {
+            id: "LOG-INIT-3",
+            type: "procurement",
+            action: "E-Commerce Checkout Completed",
+            details: "Checked out 4 units of AED Lithium Battery Pack.",
+            targetId: "SPR-9092",
+            targetName: "AED Lithium Battery Pack",
+            userEmail: "sc.procure@sunmedx.com",
+            userRole: "Procurement",
+            timestamp: new Date(Date.now() - 3600000 * 12).toISOString()
+          }
+        ];
+        localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(seededLogs));
+        setLogs(seededLogs);
       }
-      setLoading(false);
-      return;
+    } catch (e) {
+      setLogs([]);
     }
-
-    const logsCol = collection(db, "activity_logs");
-    const q = query(logsCol, orderBy("timestamp", "desc"), limit(100));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: SystemActivityLog[] = [];
-      snapshot.forEach((docSnap) => {
-        list.push({ id: docSnap.id, ...docSnap.data() } as SystemActivityLog);
-      });
-      setLogs(list);
-      setLoading(false);
-    }, (error) => {
-      console.error("Failed to connect to real-time activity logs listener:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+    setLoading(false);
+  }, [userEmail]);
 
   // Filter logs locally
   const filteredLogs = logs.filter(log => {
@@ -248,14 +260,7 @@ export default function SystemActivityLogComp({
     }
 
     try {
-      if (!auth.currentUser) {
-        writeGuestLogEntry(logPayload);
-      } else {
-        const logRef = doc(collection(db, "activity_logs"));
-        await setDoc(logRef, { id: logRef.id, ...logPayload });
-      }
-    } catch (err) {
-      console.error("Simulation error logging:", err);
+      appendLocalLogEntry(logPayload);
     } finally {
       setIsSimulating(null);
     }
@@ -277,16 +282,9 @@ export default function SystemActivityLogComp({
     };
 
     try {
-      if (!auth.currentUser) {
-        writeGuestLogEntry(logPayload);
-      } else {
-        const logRef = doc(collection(db, "activity_logs"));
-        await setDoc(logRef, { id: logRef.id, ...logPayload });
-      }
+      appendLocalLogEntry(logPayload);
       setSandboxSuccessMessage("Catastrophic ventilator telemetry alert injected successfully!");
       setTimeout(() => setSandboxSuccessMessage(""), 5000);
-    } catch (err) {
-      console.error("Critical failure injection error:", err);
     } finally {
       setIsSimulating(null);
     }
@@ -295,47 +293,19 @@ export default function SystemActivityLogComp({
   // Safe Wipe of Logs
   const clearLogs = async () => {
     if (!window.confirm("Are you sure you want to permanently clear the audit logs? This action is irreversible.")) return;
-    if (!auth.currentUser) {
-      const initLog: SystemActivityLog = {
-        id: `LOG-${Date.now()}`,
-        type: "asset",
-        action: "Audit Trail Initialized",
-        details: "Administrative policy initialized. All historic clinical ledger entries flushed safely by chief administrator.",
-        targetId: "SYS-INIT",
-        targetName: "Governance Ledger",
-        userEmail: userEmail || "guest.admin@sunmedx.com",
-        userRole: "Admin",
-        timestamp: new Date().toISOString()
-      };
-      setLogs([initLog]);
-      localStorage.setItem("sunmedx_guest_logs", JSON.stringify([initLog]));
-      return;
-    }
-
-    try {
-      const querySnapshot = await getDocs(collection(db, "activity_logs"));
-      const batch = writeBatch(db);
-      querySnapshot.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
-      
-      // Seed initial dummy action entry so ledger is not completely empty
-      const initRef = doc(collection(db, "activity_logs"));
-      await setDoc(initRef, {
-        id: initRef.id,
-        type: "asset",
-        action: "Audit Trail Initialized",
-        details: "Administrative policy initialized. All historic clinical ledger entries flushed safely by chief administrator.",
-        targetId: "SYS-INIT",
-        targetName: "Governance Ledger",
-        userEmail: userEmail || "admin@sunmedx.com",
-        userRole: "Admin",
-        timestamp: new Date().toISOString()
-      });
-    } catch (err) {
-      console.error("Failed to clear ledger logs:", err);
-    }
+    const initLog: SystemActivityLog = {
+      id: `LOG-${Date.now()}`,
+      type: "asset",
+      action: "Audit Trail Initialized",
+      details: "Administrative policy initialized. All historic clinical ledger entries flushed safely by chief administrator.",
+      targetId: "SYS-INIT",
+      targetName: "Governance Ledger",
+      userEmail: userEmail || "admin@sunmedx.com",
+      userRole: "Admin",
+      timestamp: new Date().toISOString()
+    };
+    setLogs([initLog]);
+    localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify([initLog]));
   };
 
   // Seed default clinical registries to logs
@@ -374,28 +344,10 @@ export default function SystemActivityLogComp({
       }
     ];
 
-    if (!auth.currentUser) {
-      testLogs.forEach(writeGuestLogEntry);
-      setSandboxSuccessMessage("Demo clinical trails loaded into local Guest sandbox!");
-      setTimeout(() => setSandboxSuccessMessage(""), 5000);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const batch = writeBatch(db);
-      for (const t of testLogs) {
-        const docRef = doc(collection(db, "activity_logs"));
-        batch.set(docRef, { id: docRef.id, ...t });
-      }
-      await batch.commit();
-      setSandboxSuccessMessage("Demo clinical trails synced successfully to Firestore!");
-      setTimeout(() => setSandboxSuccessMessage(""), 5000);
-    } catch (err) {
-      console.error("Bulk restoration error:", err);
-    } finally {
-      setLoading(false);
-    }
+    testLogs.forEach(appendLocalLogEntry);
+    setSandboxSuccessMessage("Demo clinical trails loaded into local portal database!");
+    setTimeout(() => setSandboxSuccessMessage(""), 5000);
+    setLoading(false);
   };
 
   // Save Settings Changes
@@ -414,13 +366,7 @@ export default function SystemActivityLogComp({
       timestamp: new Date().toISOString()
     };
 
-    if (!auth.currentUser) {
-      writeGuestLogEntry(logEntry);
-    } else {
-      const logRef = doc(collection(db, "activity_logs"));
-      setDoc(logRef, { id: logRef.id, ...logEntry }).catch(err => console.error(err));
-    }
-
+    appendLocalLogEntry(logEntry);
     setSettingsSuccessMessage("Clinical system parameters and BME policies updated successfully!");
     setTimeout(() => {
       setSettingsSuccessMessage("");
@@ -519,13 +465,7 @@ jobs:
       timestamp: new Date().toISOString()
     };
 
-    if (!auth.currentUser) {
-      writeGuestLogEntry(pubLog);
-    } else {
-      const logRef = doc(collection(db, "activity_logs"));
-      setDoc(logRef, { id: logRef.id, ...pubLog }).catch(err => console.error(err));
-    }
-
+    appendLocalLogEntry(pubLog);
     setPublishingSuccessMessage("GitHub Pages publishing settings saved (Firebase Hosting disabled).");
     setTimeout(() => {
       setPublishingSuccessMessage("");
