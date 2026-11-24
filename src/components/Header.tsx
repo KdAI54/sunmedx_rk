@@ -9,14 +9,16 @@ import {
   Building2,
   Lock,
   Sun,
-  Moon
+  Moon,
+  ArrowLeft
 } from "lucide-react";
 import { 
   clearPortalSession,
   registerPortalAccount,
   signInPortalAccount
 } from "../lib/auth";
-import { PortalUser, UserRole } from "../types";
+import { DEFAULT_COMPANY_INFO } from "../lib/companyInfo";
+import { PortalUser, UserRole, SunmedxCompanyInfo } from "../types";
 
 interface HeaderProps {
   user: PortalUser | null;
@@ -28,6 +30,9 @@ interface HeaderProps {
   onToggleTheme: () => void;
   onAuthSuccess?: (user: PortalUser) => void;
   onSignOutRequest: () => void;
+  onBackRequest?: () => void;
+  backLabel?: string;
+  companyInfo?: SunmedxCompanyInfo;
 }
 
 export default function Header({ 
@@ -39,7 +44,10 @@ export default function Header({
   theme, 
   onToggleTheme,
   onAuthSuccess,
-  onSignOutRequest
+  onSignOutRequest,
+  onBackRequest,
+  backLabel,
+  companyInfo = DEFAULT_COMPANY_INFO
 }: HeaderProps) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -85,23 +93,41 @@ export default function Header({
         ? "bg-white border-slate-200 text-slate-800" 
         : "bg-slate-900 border-slate-800 text-white"
     }`}>
-      {/* Brand & Logo */}
+      {/* Back Navigation Arrow + Brand & Logo */}
       <div className="flex items-center space-x-3">
-        <div className="bg-indigo-600 p-2 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
-          <Activity className="h-6 w-6 stroke-[2.5]" />
+        {onBackRequest && (
+          <button
+            type="button"
+            onClick={onBackRequest}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer active:scale-95 ${
+              theme === "light"
+                ? "bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700"
+                : "bg-slate-800/80 hover:bg-slate-800 border-slate-700 text-slate-200"
+            }`}
+            title={backLabel || "Go back to previous view"}
+            id="nav-back-btn"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">{backLabel || "Back"}</span>
+          </button>
+        )}
+
+        <div className="relative bg-gradient-to-br from-amber-500 via-[#FF6B00] to-red-600 p-2 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-600/20 border border-orange-500/45">
+          <Activity className="h-5 w-5 stroke-[2.5]" />
+          <span className="absolute bottom-0.5 right-0.5 w-2 h-2 bg-emerald-400 border border-[#1A1A2E] rounded-full" />
         </div>
         <div>
           <span className={`font-sans font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r ${
             theme === "light"
-              ? "from-slate-900 to-indigo-600"
-              : "from-white via-slate-100 to-indigo-400"
+              ? "from-slate-900 to-orange-600"
+              : "from-white via-slate-100 to-[#FF9A3C]"
           }`}>
-            SunMedx
+            {companyInfo.companyName}
           </span>
           <span className={`hidden sm:inline-block text-[10px] ml-2 font-mono tracking-widest uppercase px-2 py-0.5 rounded border ${
             theme === "light"
-              ? "text-indigo-600 bg-indigo-50 border-indigo-200/50"
-              : "text-indigo-400 bg-indigo-950/50 border-indigo-900/40"
+              ? "text-orange-600 bg-orange-50 border-orange-200/60"
+              : "text-[#FF9A3C] bg-orange-950/40 border-orange-900/40"
           }`}>
             BME portal
           </span>
@@ -201,7 +227,7 @@ export default function Header({
                 }`}>
                   <div className="flex items-center space-x-2 text-indigo-500 font-semibold text-xs mb-1">
                     <Building2 className="h-3 w-3" />
-                    <span>Apex Medical Center</span>
+                    <span>{companyInfo.portalFacilityName}</span>
                   </div>
                   <p className="text-xs text-slate-400 truncate font-mono">{user.email}</p>
                   

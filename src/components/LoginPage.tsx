@@ -22,6 +22,8 @@ import {
   Mail,
   MapPin,
   ArrowRight,
+  ArrowLeft,
+  ArrowUp,
   Info,
   Calendar,
   CreditCard,
@@ -30,11 +32,15 @@ import {
   Laptop
 } from "lucide-react";
 import { registerPortalAccount, signInPortalAccount } from "../lib/auth";
-import { PortalUser } from "../types";
+import { DEFAULT_COMPANY_INFO } from "../lib/companyInfo";
+import { PortalUser, SunmedxCompanyInfo } from "../types";
 
 interface LoginPageProps {
   onAuthSuccess: (user: PortalUser) => void;
   theme: "dark" | "light";
+  isAuthenticated?: boolean;
+  onReturnToPortal?: () => void;
+  companyInfo?: SunmedxCompanyInfo;
 }
 
 // Defining static product catalogue modeled on HTML content
@@ -126,7 +132,13 @@ interface CartItem {
   quantity: number;
 }
 
-export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
+export default function LoginPage({
+  onAuthSuccess,
+  theme,
+  isAuthenticated = false,
+  onReturnToPortal,
+  companyInfo = DEFAULT_COMPANY_INFO
+}: LoginPageProps) {
   // Authentication states
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -179,6 +191,20 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
 
   // Global toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 260);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -322,10 +348,10 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
             </div>
             <div className="flex flex-col">
               <span className="font-display font-extrabold text-lg text-[#FF9A3C] tracking-tight leading-none">
-                SunMedx
+                {companyInfo.companyName}
               </span>
               <span className="text-[9px] font-mono font-bold text-slate-400 tracking-widest uppercase mt-1">
-                Biomedical • R K Enterprises
+                {companyInfo.companyTagline}
               </span>
             </div>
           </a>
@@ -354,14 +380,26 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
               )}
             </button>
 
-            {/* Main Portal Database Sign-In Button */}
-            <button
-              onClick={() => setShowPortalModal(true)}
-              className="bg-gradient-to-r from-red-600 via-[#FF6B00] to-amber-500 hover:opacity-95 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-display font-bold text-xs sm:text-xs tracking-wide shadow-lg shadow-orange-650/25 transition cursor-pointer flex items-center gap-1.5 active:scale-[0.98]"
-            >
-              <Lock className="h-3.5 w-3.5 stroke-[2.5]" />
-              <span>Biomedical Database Portal</span>
-            </button>
+            {/* Main Portal Sign-In / Return Button */}
+            {isAuthenticated && onReturnToPortal ? (
+              <button
+                onClick={onReturnToPortal}
+                className="bg-gradient-to-r from-red-600 via-[#FF6B00] to-amber-500 hover:opacity-95 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-display font-bold text-xs tracking-wide shadow-lg shadow-orange-650/25 transition cursor-pointer flex items-center gap-1.5 active:scale-[0.98]"
+                id="home-return-portal-btn"
+              >
+                <span>Return to Portal</span>
+                <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowPortalModal(true)}
+                className="bg-gradient-to-r from-red-600 via-[#FF6B00] to-amber-500 hover:opacity-95 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-display font-bold text-xs tracking-wide shadow-lg shadow-orange-650/25 transition cursor-pointer flex items-center gap-1.5 active:scale-[0.98]"
+                id="home-signin-portal-btn"
+              >
+                <Lock className="h-3.5 w-3.5 stroke-[2.5]" />
+                <span>Sign In to Portal</span>
+              </button>
+            )}
           </div>
 
         </div>
@@ -384,7 +422,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full">
                 <span className="w-2 h-2 rounded-full bg-[#FF9A3C] shadow shadow-orange-500 animate-ping" />
                 <span className="font-mono text-[10px] tracking-widest text-[#FFD08A] font-bold uppercase leading-none">
-                  Biomedical Engineering · R K Enterprises · India
+                  {companyInfo.heroBadgeText}
                 </span>
               </div>
 
@@ -395,7 +433,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
               </h1>
               
               <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
-                SunMedx provides exceptional biomedical engineering solutions — high-performance medical instruments, ventilator systems support, practical clinical workshops, and expert NABH/ISO consultancy — facilitating better hospital practices across India.
+                {companyInfo.heroDescription}
               </p>
 
               <div className="flex flex-wrap gap-3.5 pt-2">
@@ -457,15 +495,15 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                 {/* Quick features tags */}
                 <div className="grid grid-cols-3 gap-2.5 mt-4">
                   <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
-                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">10+</span>
+                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">{companyInfo.yearsExperience}</span>
                     <span className="text-[9px] font-mono text-slate-500 uppercase leading-none mt-1.5 block">Years Exp.</span>
                   </div>
                   <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
-                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">200+</span>
+                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">{companyInfo.hospitalsServed}</span>
                     <span className="text-[9px] font-mono text-slate-500 uppercase leading-none mt-1.5 block">Hospitals</span>
                   </div>
                   <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
-                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">50+</span>
+                    <span className="font-display font-extrabold text-[#FF9A3C] text-lg block leading-none">{companyInfo.devicesSupported}</span>
                     <span className="text-[9px] font-mono text-slate-500 uppercase leading-none mt-1.5 block">Devices</span>
                   </div>
                 </div>
@@ -525,7 +563,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
             </h2>
 
             <p className="text-slate-350 text-sm leading-relaxed">
-              SunMedx is a leading biomedical engineering brand operating under <strong>R K Enterprises</strong> in India. We supply world-class medical instruments including ventilator solutions, support packages, and strategic technical consultancy to healthcare facilities, dramatically improving operational accuracy.
+              {companyInfo.aboutDescription}
             </p>
 
             <p className="text-slate-350 text-sm leading-relaxed">
@@ -543,7 +581,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                 Our Corporate Mission
               </span>
               <p className="text-[#FFD08A] font-display font-bold text-sm tracking-tight leading-snug">
-                To make world-class biomedical engineering expertise accessible to every healthcare facility across India — through reliable instruments, practical training, and trusted consultancy.
+                {companyInfo.missionStatement}
               </p>
             </div>
           </div>
@@ -973,7 +1011,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                 Get in Touch
               </span>
               <h2 className="font-display font-black text-3xl sm:text-4xl text-white tracking-tight leading-none">
-                Connect with SunMedx
+                Connect with {companyInfo.companyName}
               </h2>
               <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
                 Connect our clinical team to organize local hospital audits, schedule certified ventilators classroom bookings, or request detailed product quotation rosters. Serve healthcare nationwide.
@@ -986,7 +1024,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                   </span>
                   <div>
                     <span className="text-[9px] font-mono font-bold tracking-wider uppercase text-slate-500 block leading-none">Phone Hotline</span>
-                    <span className="text-sm font-semibold text-white mt-1 block">+91 123-456-7890</span>
+                    <span className="text-sm font-semibold text-white mt-1 block">{companyInfo.phoneHotline}</span>
                   </div>
                 </div>
 
@@ -996,7 +1034,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                   </span>
                   <div>
                     <span className="text-[9px] font-mono font-bold tracking-wider uppercase text-slate-500 block leading-none">Corporate Email</span>
-                    <span className="text-sm font-semibold text-white mt-1 block">info@sunmedx.com</span>
+                    <span className="text-sm font-semibold text-white mt-1 block">{companyInfo.corporateEmail}</span>
                   </div>
                 </div>
 
@@ -1006,7 +1044,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
                   </span>
                   <div>
                     <span className="text-[9px] font-mono font-bold tracking-wider uppercase text-slate-500 block leading-none">Headquarters</span>
-                    <span className="text-sm font-semibold text-white mt-1 block">India — Serving healthcare providers nationwide</span>
+                    <span className="text-sm font-semibold text-white mt-1 block">{companyInfo.headquarters}</span>
                   </div>
                 </div>
               </div>
@@ -1126,10 +1164,10 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
               <div className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center text-white font-black text-sm">
                 ✚
               </div>
-              <span className="font-display font-extrabold text-white text-base">SunMedx</span>
+              <span className="font-display font-extrabold text-white text-base">{companyInfo.companyName}</span>
             </a>
             <p className="text-xs text-slate-500 leading-relaxed max-w-sm">
-              Exceptional biomedical engineering solutions, medical device calibration, ventilator certification support, and expert hospital consultancy. Operating as an official brand under <strong>R K Enterprises, India</strong>.
+              {companyInfo.aboutDescription}
             </p>
           </div>
 
@@ -1167,7 +1205,7 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
 
         <div className="bg-slate-950/40 py-6 border-t border-slate-900/60 font-mono text-[9.5px] text-slate-600 sm:font-bold">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <span>© 2026 SUNMEDX • R K ENTERPRISES • INDIA. ALL CLINICAL DOCUMENTATION SECURELY CO-SIGNED.</span>
+            <span>{companyInfo.footerNotice}</span>
             <div className="flex gap-4">
               <span className="hover:text-white transition cursor-pointer">CDSCO Approved</span>
               <span className="hover:text-white transition cursor-pointer">ISO 13485</span>
@@ -1189,9 +1227,20 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
           <div className="bg-slate-900/90 border border-slate-800/80 rounded-3xl p-7 max-w-sm sm:max-w-md w-full relative overflow-hidden z-10 shadow-2xl">
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-650 via-[#FF6B00] to-amber-400" />
             
+            <button
+              type="button"
+              onClick={() => setShowPortalModal(false)}
+              className="absolute top-4 left-4 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-950/80 hover:bg-slate-800 border border-slate-800 rounded-lg transition cursor-pointer"
+              title="Back to Home Page"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Back</span>
+            </button>
+
             <button 
               onClick={() => setShowPortalModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white rounded-lg transition"
+              className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white rounded-lg transition cursor-pointer"
+              aria-label="Close"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -1720,6 +1769,21 @@ export default function LoginPage({ onAuthSuccess, theme }: LoginPageProps) {
         </div>
       )}
 
+
+      {/* ── SCROLL BACK TO TOP ARROW BUTTON ── */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label="Scroll back to top"
+          title="Back to Top"
+          id="home-scroll-top-btn"
+          className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-1.5 px-3.5 py-3 rounded-full bg-gradient-to-r from-red-600 via-[#FF6B00] to-amber-500 hover:opacity-95 text-white font-display font-bold text-xs shadow-xl shadow-orange-600/30 border border-orange-400/40 transition-all duration-200 cursor-pointer hover:-translate-y-0.5 active:scale-95"
+        >
+          <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+          <span className="hidden sm:inline">Top</span>
+        </button>
+      )}
 
       {/* ── CENTRAL FLOATING HEALING TOAST ── */}
       {toastMessage && (

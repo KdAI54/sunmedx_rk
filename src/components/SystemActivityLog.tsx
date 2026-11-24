@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { SystemActivityLog, UserRole } from "../types";
+import { SystemActivityLog, UserRole, SunmedxCompanyInfo } from "../types";
+import { DEFAULT_COMPANY_INFO } from "../lib/companyInfo";
 import { 
   History, 
   Filter, 
@@ -29,7 +30,12 @@ import {
   Download,
   ExternalLink,
   Terminal,
-  Server
+  Server,
+  Building2,
+  RotateCcw,
+  Phone,
+  Mail,
+  MapPin
 } from "lucide-react";
 
 interface SystemActivityLogProps {
@@ -50,6 +56,9 @@ interface SystemActivityLogProps {
     apiBaseUrl?: string;
   };
   onUpdateSettings: (settings: any) => void;
+  companyInfo?: SunmedxCompanyInfo;
+  onUpdateCompanyInfo?: (info: SunmedxCompanyInfo) => void;
+  onResetCompanyInfo?: () => void;
   assets?: any[];
   tickets?: any[];
   spares?: any[];
@@ -61,6 +70,9 @@ export default function SystemActivityLogComp({
   userEmail,
   settings,
   onUpdateSettings,
+  companyInfo = DEFAULT_COMPANY_INFO,
+  onUpdateCompanyInfo,
+  onResetCompanyInfo,
   assets = [],
   tickets = [],
   spares = [],
@@ -73,18 +85,24 @@ export default function SystemActivityLogComp({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSimulating, setIsSimulating] = useState<string | null>(null);
   
-  // Tab control: "logs" | "policies" | "publishing" | "sandbox" | "roles"
-  const [activeTab, setActiveTab] = useState<"logs" | "policies" | "publishing" | "sandbox" | "roles">("logs");
+  // Tab control: "logs" | "policies" | "company" | "publishing" | "sandbox" | "roles"
+  const [activeTab, setActiveTab] = useState<"logs" | "policies" | "company" | "publishing" | "sandbox" | "roles">("logs");
   const [tempSettings, setTempSettings] = useState({ ...settings });
+  const [tempCompanyInfo, setTempCompanyInfo] = useState<SunmedxCompanyInfo>({ ...companyInfo });
+  const [companySuccessMessage, setCompanySuccessMessage] = useState("");
   const [settingsSuccessMessage, setSettingsSuccessMessage] = useState("");
   const [publishingSuccessMessage, setPublishingSuccessMessage] = useState("");
   const [copiedWorkflow, setCopiedWorkflow] = useState(false);
   const [sandboxSuccessMessage, setSandboxSuccessMessage] = useState("");
 
-  // Sync temp settings state when core settings change
+  // Sync temp settings & company info state when core props change
   useEffect(() => {
     setTempSettings({ ...settings });
   }, [settings]);
+
+  useEffect(() => {
+    setTempCompanyInfo({ ...companyInfo });
+  }, [companyInfo]);
 
   const LOGS_STORAGE_KEY = "sunmedx_portal_logs";
 
@@ -373,6 +391,41 @@ export default function SystemActivityLogComp({
     }, 4000);
   };
 
+  // Save SunMedx Company Info edits
+  const handleSaveCompanyInfo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onUpdateCompanyInfo) {
+      onUpdateCompanyInfo(tempCompanyInfo);
+    }
+
+    appendLocalLogEntry({
+      type: "asset",
+      action: "SunMedx Company Info Updated",
+      details: `Super Admin updated public brand & contact profile (${tempCompanyInfo.companyName} · ${tempCompanyInfo.corporateEmail} · ${tempCompanyInfo.phoneHotline}).`,
+      targetId: "COMPANY-PROFILE",
+      targetName: tempCompanyInfo.companyName || "SunMedx",
+      userEmail: userEmail || "admin@sunmedx.com",
+      userRole: "Admin",
+      timestamp: new Date().toISOString()
+    });
+
+    setCompanySuccessMessage("SunMedx company profile published to Home Page & Portal!");
+    setTimeout(() => {
+      setCompanySuccessMessage("");
+    }, 4000);
+  };
+
+  const handleResetCompanyProfile = () => {
+    if (onResetCompanyInfo) {
+      onResetCompanyInfo();
+    }
+    setTempCompanyInfo({ ...DEFAULT_COMPANY_INFO });
+    setCompanySuccessMessage("SunMedx company profile restored to defaults.");
+    setTimeout(() => {
+      setCompanySuccessMessage("");
+    }, 4000);
+  };
+
   // Computed GitHub Publishing Metadata & Workflow YAML
   const cleanOwner = (tempSettings.githubOwner || "krishnadigitalai").trim();
   const cleanRepo = (tempSettings.githubRepo || "sunmedx-bme-portal").trim();
@@ -569,6 +622,18 @@ jobs:
             >
               <Sliders className="h-4 w-4 text-emerald-400" />
               <span>Policy Parameters & Costings</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("company")}
+              className={`px-4 py-2.5 border-b-2 text-xs font-semibold transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+                activeTab === "company"
+                  ? "border-indigo-500 text-white bg-slate-900/40 rounded-t-xl"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+              id="admin-tab-company-info"
+            >
+              <Building2 className="h-4 w-4 text-orange-400" />
+              <span>SunMedx Company Info</span>
             </button>
             <button
               onClick={() => setActiveTab("publishing")}
@@ -1557,6 +1622,306 @@ jobs:
                     <li>Spares Cart Purchase: <span className="text-emerald-400">WRITE</span> (Admin, Procurement only)</li>
                     <li>Governance Parameter Settings: <span className="text-emerald-400">WRITE</span> (Admin only)</li>
                   </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SUNMEDX COMPANY INFO EDITOR */}
+          {activeTab === "company" && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
+              {/* Editor Form - 7 Columns */}
+              <div className="lg:col-span-7 bg-slate-900/50 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-850 pb-4">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="p-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-xl">
+                      <Building2 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">SunMedx Company Info Editor</h3>
+                      <p className="text-[10.5px] text-slate-400">
+                        Edit brand details, mission copy, impact stats, and contact information displayed on the Home Page & Portal.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetCompanyProfile}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] font-semibold text-slate-300 transition cursor-pointer shrink-0"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveCompanyInfo} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Company / Brand Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={tempCompanyInfo.companyName}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, companyName: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Sub-Brand / Parent Tagline
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={tempCompanyInfo.companyTagline}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, companyTagline: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Hero Banner Badge
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.heroBadgeText}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, heroBadgeText: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Portal Facility / Hospital Name
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.portalFacilityName}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, portalFacilityName: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Hero Summary Description
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={tempCompanyInfo.heroDescription}
+                      onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, heroDescription: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                      About Company Overview
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={tempCompanyInfo.aboutDescription}
+                      onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, aboutDescription: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Corporate Mission Statement
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={tempCompanyInfo.missionStatement}
+                      onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, missionStatement: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Years Exp.
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.yearsExperience}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, yearsExperience: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white font-mono focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Hospitals
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.hospitalsServed}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, hospitalsServed: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white font-mono focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Devices
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.devicesSupported}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, devicesSupported: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white font-mono focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Phone Hotline
+                      </label>
+                      <input
+                        type="text"
+                        value={tempCompanyInfo.phoneHotline}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, phoneHotline: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Corporate Email
+                      </label>
+                      <input
+                        type="email"
+                        value={tempCompanyInfo.corporateEmail}
+                        onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, corporateEmail: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Headquarters / Service Region
+                    </label>
+                    <input
+                      type="text"
+                      value={tempCompanyInfo.headquarters}
+                      onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, headquarters: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Footer Legal Notice
+                    </label>
+                    <input
+                      type="text"
+                      value={tempCompanyInfo.footerNotice}
+                      onChange={(e) => setTempCompanyInfo({ ...tempCompanyInfo, footerNotice: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-850 flex flex-col sm:flex-row items-center justify-between gap-3.5">
+                    {companySuccessMessage ? (
+                      <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                        <Check className="h-4 w-4" />
+                        <span>{companySuccessMessage}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500">
+                        Updates sync immediately with the Home Page and Header brand card.
+                      </span>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-[#FF6B00] to-amber-500 hover:opacity-95 text-white font-bold text-xs rounded-xl shadow-lg transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                      id="save-company-info-btn"
+                    >
+                      <Check className="h-4 w-4" />
+                      <span>Save & Publish Company Info</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Live Preview Column - 5 Columns */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl space-y-4 shadow-xl">
+                  <div className="flex items-center space-x-2 text-orange-400 font-mono text-[10px] uppercase font-bold tracking-widest border-b border-slate-800 pb-3">
+                    <Globe className="h-4 w-4" />
+                    <span>Live Home Page Brand Preview</span>
+                  </div>
+
+                  <div className="bg-[#1A1A2E] border border-slate-800 rounded-2xl p-4 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 relative flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 via-[#FF6B00] to-red-600 border border-orange-500/45 shrink-0">
+                        <Activity className="h-4.5 w-4.5 text-white" />
+                        <div className="absolute bottom-0.5 right-0.5 w-2 h-2 bg-emerald-400 border border-[#1A1A2E] rounded-full" />
+                      </div>
+                      <div>
+                        <div className="font-display font-extrabold text-sm text-[#FF9A3C] leading-none">
+                          {tempCompanyInfo.companyName || "SunMedx"}
+                        </div>
+                        <div className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider mt-1">
+                          {tempCompanyInfo.companyTagline}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#FF9A3C]" />
+                      <span className="font-mono text-[9px] text-[#FFD08A] font-bold uppercase">
+                        {tempCompanyInfo.heroBadgeText}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      {tempCompanyInfo.heroDescription}
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
+                        <span className="font-display font-extrabold text-[#FF9A3C] text-sm block">{tempCompanyInfo.yearsExperience}</span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase">Years Exp.</span>
+                      </div>
+                      <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
+                        <span className="font-display font-extrabold text-[#FF9A3C] text-sm block">{tempCompanyInfo.hospitalsServed}</span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase">Hospitals</span>
+                      </div>
+                      <div className="bg-slate-950 border border-slate-850 p-2 text-center rounded-xl">
+                        <span className="font-display font-extrabold text-[#FF9A3C] text-sm block">{tempCompanyInfo.devicesSupported}</span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase">Devices</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 border-l-4 border-[#FF6B00] rounded-xl text-[10.5px] text-[#FFD08A] leading-snug">
+                      <span className="text-[8px] font-mono uppercase tracking-widest text-[#FF9A3C] block mb-1">Mission</span>
+                      {tempCompanyInfo.missionStatement}
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-slate-800 text-[11px] text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-[#FF9A3C]" />
+                        <span>{tempCompanyInfo.phoneHotline}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-[#FF9A3C]" />
+                        <span>{tempCompanyInfo.corporateEmail}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-3.5 w-3.5 text-[#FF9A3C]" />
+                        <span>{tempCompanyInfo.headquarters}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

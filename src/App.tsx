@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Asset, SparePart, ServiceTicket, Course, CartItem, UserRole, PortalUser } from "./types";
+import { Asset, SparePart, ServiceTicket, Course, CartItem, UserRole, PortalUser, SunmedxCompanyInfo } from "./types";
 import { getPortalSession, clearPortalSession } from "./lib/auth";
+import { loadCompanyInfo, saveCompanyInfo, resetCompanyInfo } from "./lib/companyInfo";
 import { initialAssets, initialSpares, initialCourses } from "./data";
 
 // Subcomponents
@@ -34,8 +35,49 @@ export default function App() {
 
   // App UI Navigation State
   const [currentTab, setCurrentTab] = useState<SidebarTab>("dashboard");
+  const [tabHistory, setTabHistory] = useState<SidebarTab[]>([]);
+  const [showHomePage, setShowHomePage] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+
+  const handleChangeTab = (nextTab: SidebarTab) => {
+    if (nextTab === currentTab) return;
+    setTabHistory((prev) => [...prev, currentTab]);
+    setCurrentTab(nextTab);
+    try {
+      window.history.pushState({ view: "portal", tab: nextTab }, "");
+    } catch {
+      // Ignore history errors in restricted sandboxed contexts
+    }
+  };
+
+  const handleBackNavigation = () => {
+    if (tabHistory.length > 0) {
+      const previousTab = tabHistory[tabHistory.length - 1];
+      setTabHistory((prev) => prev.slice(0, -1));
+      setCurrentTab(previousTab);
+      return;
+    }
+    if (currentTab !== "dashboard") {
+      setCurrentTab("dashboard");
+      return;
+    }
+    setShowHomePage(true);
+  };
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as { view?: string; tab?: SidebarTab } | null;
+      if (state?.view === "portal" && state.tab) {
+        setShowHomePage(false);
+        setCurrentTab(state.tab);
+      } else if (user) {
+        setShowHomePage(true);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [user]);
   
   // Shopping Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -86,6 +128,22 @@ export default function App() {
     localStorage.setItem("sunmedx_admin_settings", JSON.stringify(newSettings));
   };
 
+  // SunMedx Company Profile state (editable via Super Admin section)
+  const [companyInfo, setCompanyInfo] = useState<SunmedxCompanyInfo>(() => loadCompanyInfo());
+
+  useEffect(() => {
+    const brand = (companyInfo.companyName || "SunMedx").trim();
+    document.title = `${brand} — Biomedical Engineering Enterprise Portal`;
+  }, [companyInfo.companyName]);
+
+  const handleUpdateCompanyInfo = (nextInfo: SunmedxCompanyInfo) => {
+    setCompanyInfo(saveCompanyInfo(nextInfo));
+  };
+
+  const handleResetCompanyInfo = () => {
+    setCompanyInfo(resetCompanyInfo());
+  };
+
   // 1. Portal Role synchronization
   const [userRole, setUserRole] = useState<UserRole>(() => getPortalSession()?.role || "Admin");
 
@@ -116,7 +174,7 @@ export default function App() {
     // Move away from tab if newly unauthorized
     const allowed = checkIsTabAllowed(newRole, currentTab);
     if (!allowed) {
-      setCurrentTab("dashboard");
+      handleChangeTab("dashboard");
     }
   };
 
@@ -397,7 +455,7 @@ export default function App() {
         return (
           <DashboardOverview 
             assets={assets} 
-            onChangeTab={setCurrentTab} 
+            onChangeTab={handleChangeTab} 
             userEmail={user?.email || undefined}
             userRole={userRole}
           />
@@ -463,6 +521,9 @@ export default function App() {
             userEmail={user?.email || undefined}
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            companyInfo={companyInfo}
+            onUpdateCompanyInfo={handleUpdateCompanyInfo}
+            onResetCompanyInfo={handleResetCompanyInfo}
             assets={assets}
             tickets={tickets}
             spares={spares}
@@ -478,18 +539,36 @@ export default function App() {
     }
   };
 
-  // Render standalone landing/sign-in page if unauthenticated
-  if (!user) {
+  // Render standalone landing/sign-in page if unauthenticated or returning to Home
+  if (!user || showHomePage) {
     return (
       <LoginPage
         theme={theme}
+        companyInfo={companyInfo}
+        isAuthenticated={Boolean(user)}
+        onReturnToPortal={() => {
+          setShowHomePage(false);
+          try {
+            window.history.pushState({ view: "portal", tab: currentTab }, "");
+          } catch {
+            // Ignore history errors
+          }
+        }}
         onAuthSuccess={(portalUser) => {
           setUser(portalUser);
           setUserRole(portalUser.role);
+          setShowHomePage(false);
+          try {
+            window.history.pushState({ view: "portal", tab: currentTab }, "");
+          } catch {
+            // Ignore history errors
+          }
         }}
       />
     );
   }
+
+  const backButtonLabel = tabHistory.length > 0 || currentTab !== "dashboard" ? "Back" : "Back to Home";
 
   return (
     <div className={`min-h-screen flex flex-col font-sans antialiased transition-colors duration-200 ${
@@ -507,13 +586,20 @@ export default function App() {
         cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        companyInfo={companyInfo}
+        onBackRequest={handleBackNavigation}
+        backLabel={backButtonLabel}
         onAuthSuccess={(portalUser) => {
           setUser(portalUser);
           setUserRole(portalUser.role);
+          setShowHomePage(false);
         }}
         onSignOutRequest={() => {
           clearPortalSession();
           setUser(null);
+          setShowHomePage(false);
+          setTabHistory([]);
+          setCurrentTab("dashboard");
         }}
       />
 
@@ -523,7 +609,7 @@ export default function App() {
         {/* 2a. Collapsible Sidebar */}
         <Sidebar 
           currentTab={currentTab} 
-          onChangeTab={setCurrentTab} 
+          onChangeTab={handleChangeTab} 
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           userRole={userRole}

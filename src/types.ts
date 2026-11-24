@@ -78,3 +78,21 @@ export interface SystemActivityLog {
   userRole: UserRole;
   timestamp: string;
 }
+
+export interface SunmedxCompanyInfo {
+  companyName: string;
+  companyTagline: string;
+  heroBadgeText: string;
+  heroDescription: string;
+  aboutDescription: string;
+  missionStatement: string;
+  yearsExperience: string;
+  hospitalsServed: string;
+  devicesSupported: string;
+  phoneHotline: string;
+  corporateEmail: string;
+  headquarters: string;
+  portalFacilityName: string;
+  footerNotice: string;
+}
+
